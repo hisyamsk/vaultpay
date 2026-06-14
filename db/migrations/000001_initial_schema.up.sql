@@ -39,6 +39,7 @@ CREATE TABLE payments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
+    CONSTRAINT payments_idempotency_key_unique UNIQUE (idempotency_key),
     CHECK (sender_id <> receiver_id)
 );
 
