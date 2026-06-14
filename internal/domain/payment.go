@@ -19,7 +19,7 @@ const (
 type Payment struct {
 	ID             uuid.UUID
 	Amount         int64
-	Currency       string
+	Currency       Currency
 	SenderID       uuid.UUID
 	ReceiverID     uuid.UUID
 	IdempotencyKey string
@@ -28,4 +28,21 @@ type Payment struct {
 	Description    *string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type Currency string
+
+const (
+	CurrencyIDR Currency = "IDR"
+	CurrencyUSD Currency = "USD"
+	CurrencySGD Currency = "SGD"
+)
+
+func (c Currency) Valid() bool {
+	switch c {
+	case CurrencyIDR, CurrencyUSD, CurrencySGD:
+		return true
+	default:
+		return false
+	}
 }
