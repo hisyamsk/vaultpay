@@ -17,7 +17,7 @@ type PaymentRepository struct {
 
 type CreatePaymentParams struct {
 	Amount         int64
-	Currency       string
+	Currency       domain.Currency
 	SenderID       uuid.UUID
 	ReceiverID     uuid.UUID
 	IdempotencyKey string
@@ -26,8 +26,6 @@ type CreatePaymentParams struct {
 
 var ErrDuplicateIdempotencyKey = errors.New("duplicate idempotency key")
 var ErrPaymentNotFound = errors.New("payment not found")
-
-var pgErr *pgconn.PgError
 
 func NewPaymentRepository(db *pgxpool.Pool) *PaymentRepository {
 	return &PaymentRepository{
@@ -47,8 +45,9 @@ func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentPara
 	)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
-			if pgErr.Code == "23505" && pgErr.ConstraintName == "payments_idempotency_key_key" {
+			if pgErr.Code == "23505" && pgErr.ConstraintName == "payments_idempotency_key_unique" {
 				return nil, ErrDuplicateIdempotencyKey
 			}
 		}
@@ -68,7 +67,7 @@ func (r *PaymentRepository) FindByIdempotencyKey(ctx context.Context, idempotenc
 		&payment.ErrorCode, &payment.Description, &payment.CreatedAt, &payment.UpdatedAt,
 	)
 	if err != nil {
-		if errors.As(err, pgx.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrPaymentNotFound
 		}
 		return nil, err
