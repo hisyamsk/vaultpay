@@ -18,7 +18,8 @@ services:
         "--listen=:40000",
         "--api-version=2",
         "--accept-multiclient",
-        "--continue"
+        "--continue",
+        "--build-flags=-buildvcs=false"
       ]
 
   postgres:
@@ -28,7 +29,7 @@ services:
       POSTGRES_USER: vaultpay
       POSTGRES_PASSWORD: vaultpay_dev
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

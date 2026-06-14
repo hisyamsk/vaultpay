@@ -1,5 +1,10 @@
 .PHONY: migrate-up migrate-down migrate-version docker-build docker-build-dev compose-up compose-down compose-logs compose-dev-up compose-dev-down compose-dev-logs
 
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 IMAGE_NAME ?= vaultpay-api
 IMAGE_TAG ?= local
 GO_VERSION ?= 1.25
@@ -12,7 +17,7 @@ docker-build-dev:
 	docker build --build-arg GO_VERSION=$(GO_VERSION) --build-arg DELVE_VERSION=$(DELVE_VERSION) -f Dockerfile.dev -t $(IMAGE_NAME):dev .
 
 compose-up:
-	docker compose up --build
+	docker compose up -d
 
 compose-down:
 	docker compose down
@@ -21,7 +26,7 @@ compose-logs:
 	docker compose logs -f api
 
 compose-dev-up:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 compose-dev-down:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml down

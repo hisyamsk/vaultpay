@@ -2,7 +2,7 @@
   "$schema": "https://pg-language-server.com/latest/schema.json",
   "db": {
     "host": "127.0.0.1",
-    "port": 5433,
+    "port": 5432,
     "username": "vaultpay",
     "password": "vaultpay_dev",
     "database": "vaultpay",
