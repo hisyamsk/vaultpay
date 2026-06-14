@@ -1,8 +1,12 @@
-FROM golang:1.23-bookworm
+ARG GO_VERSION=1.25
+
+FROM golang:${GO_VERSION}-bookworm
+
+ARG DELVE_VERSION=v1.26.3
 
 WORKDIR /app
 
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
+RUN go install github.com/go-delve/delve/cmd/dlv@${DELVE_VERSION}
 
 COPY go.mod go.sum ./
 RUN go mod download
