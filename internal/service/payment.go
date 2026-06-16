@@ -30,7 +30,9 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 	if req.SenderID == req.ReceiverID {
 		return nil, ErrSameSenderAndReceiver
 	}
-	if strings.TrimSpace(req.IdempotencyKey) == "" {
+
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if idempotencyKey == "" {
 		return nil, ErrMissingIdempotencyKey
 	}
 
@@ -38,14 +40,15 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 		Amount:         req.Amount,
 		SenderID:       req.SenderID,
 		ReceiverID:     req.ReceiverID,
-		IdempotencyKey: req.IdempotencyKey,
+		IdempotencyKey: idempotencyKey,
 		Description:    req.Description,
 	}
 
 	p, err := s.repo.Create(ctx, repoParams)
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicateIdempotencyKey) {
-			existing, err := s.repo.FindByIdempotencyKey(ctx, req.IdempotencyKey)
+
+			existing, err := s.repo.FindByIdempotencyKey(ctx, idempotencyKey)
 			if err != nil {
 				return nil, fmt.Errorf("find payment by idempotency key: %w", err)
 			}
