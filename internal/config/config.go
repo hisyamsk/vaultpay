@@ -17,7 +17,7 @@ func LoadConfig() (Config, error) {
 	}
 	dbUrl := os.Getenv("DATABASE_URL")
 	if dbUrl == "" {
-		return Config{}, errors.New("missing DATABSE_URL env variable")
+		return Config{}, errors.New("missing DATABASE_URL env variable")
 	}
 
 	config := Config{
