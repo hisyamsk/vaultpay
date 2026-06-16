@@ -16,7 +16,6 @@ type paymentRepository interface {
 
 var (
 	ErrInvalidPaymentAmount   = errors.New("invalid payment amount")
-	ErrInvalidPaymentCurrency = errors.New("invalid payment currency")
 	ErrInvalidPaymentSender   = errors.New("invalid payment sender")
 	ErrInvalidPaymentReceiver = errors.New("invalid payment receiver")
 	ErrSameSenderAndReceiver  = errors.New("sender and receiver must differ")
@@ -25,7 +24,6 @@ var (
 
 type CreatePaymentRequest struct {
 	Amount         int64
-	Currency       domain.Currency
 	SenderID       uuid.UUID
 	ReceiverID     uuid.UUID
 	IdempotencyKey string

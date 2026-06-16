@@ -21,9 +21,6 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 	if req.Amount <= 0 {
 		return nil, ErrInvalidPaymentAmount
 	}
-	if !req.Currency.Valid() {
-		return nil, ErrInvalidPaymentCurrency
-	}
 	if req.SenderID == uuid.Nil {
 		return nil, ErrInvalidPaymentSender
 	}
@@ -39,7 +36,6 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 
 	repoParams := repository.CreatePaymentParams{
 		Amount:         req.Amount,
-		Currency:       req.Currency,
 		SenderID:       req.SenderID,
 		ReceiverID:     req.ReceiverID,
 		IdempotencyKey: req.IdempotencyKey,

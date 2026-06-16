@@ -17,7 +17,6 @@ type PaymentRepository struct {
 
 type CreatePaymentParams struct {
 	Amount         int64
-	Currency       domain.Currency
 	SenderID       uuid.UUID
 	ReceiverID     uuid.UUID
 	IdempotencyKey string
@@ -36,11 +35,11 @@ func NewPaymentRepository(db *pgxpool.Pool) *PaymentRepository {
 func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentParams) (*domain.Payment, error) {
 	payment := &domain.Payment{}
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO payments (amount, currency, sender_id, receiver_id, idempotency_key, description)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, amount, currency, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
-	`, params.Amount, params.Currency, params.SenderID, params.ReceiverID, params.IdempotencyKey, params.Description).Scan(
-		&payment.ID, &payment.Amount, &payment.Currency, &payment.SenderID, &payment.ReceiverID, &payment.IdempotencyKey, &payment.Status,
+		INSERT INTO payments (amount, sender_id, receiver_id, idempotency_key, description)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+	`, params.Amount, params.SenderID, params.ReceiverID, params.IdempotencyKey, params.Description).Scan(
+		&payment.ID, &payment.Amount, &payment.SenderID, &payment.ReceiverID, &payment.IdempotencyKey, &payment.Status,
 		&payment.ErrorCode, &payment.Description, &payment.CreatedAt, &payment.UpdatedAt,
 	)
 
@@ -60,10 +59,10 @@ func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentPara
 func (r *PaymentRepository) FindByIdempotencyKey(ctx context.Context, idempotencyKey string) (*domain.Payment, error) {
 	payment := &domain.Payment{}
 	err := r.db.QueryRow(ctx, `
-		SELECT id, amount, currency, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+		SELECT id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
 		FROM payments
 		WHERE idempotency_key = $1`, idempotencyKey).Scan(
-		&payment.ID, &payment.Amount, &payment.Currency, &payment.SenderID, &payment.ReceiverID, &payment.IdempotencyKey, &payment.Status,
+		&payment.ID, &payment.Amount, &payment.SenderID, &payment.ReceiverID, &payment.IdempotencyKey, &payment.Status,
 		&payment.ErrorCode, &payment.Description, &payment.CreatedAt, &payment.UpdatedAt,
 	)
 	if err != nil {

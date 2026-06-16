@@ -32,7 +32,6 @@ func (f fakePaymentRepository) FindByIdempotencyKey(ctx context.Context, idempot
 func TestCreatePaymentValidation(t *testing.T) {
 	validReq := CreatePaymentRequest{
 		Amount:         1000,
-		Currency:       domain.CurrencyIDR,
 		SenderID:       uuid.New(),
 		ReceiverID:     uuid.New(),
 		IdempotencyKey: "idem-1",
@@ -49,13 +48,6 @@ func TestCreatePaymentValidation(t *testing.T) {
 				req.Amount = 0
 			},
 			wantErr: ErrInvalidPaymentAmount,
-		},
-		{
-			name: "invalid currency",
-			mutate: func(req *CreatePaymentRequest) {
-				req.Currency = domain.Currency("EUR")
-			},
-			wantErr: ErrInvalidPaymentCurrency,
 		},
 		{
 			name: "invalid sender",
@@ -117,7 +109,6 @@ func TestCreatePaymentValidation(t *testing.T) {
 func TestCreatePaymentCreatesPayment(t *testing.T) {
 	req := CreatePaymentRequest{
 		Amount:         1000,
-		Currency:       domain.CurrencyIDR,
 		SenderID:       uuid.New(),
 		ReceiverID:     uuid.New(),
 		IdempotencyKey: "idem-1",
@@ -128,9 +119,6 @@ func TestCreatePaymentCreatesPayment(t *testing.T) {
 		createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
 			if params.Amount != req.Amount {
 				t.Fatalf("expected amount %d, got %d", req.Amount, params.Amount)
-			}
-			if params.Currency != req.Currency {
-				t.Fatalf("expected currency %s, got %s", req.Currency, params.Currency)
 			}
 			if params.SenderID != req.SenderID {
 				t.Fatalf("expected sender ID %s, got %s", req.SenderID, params.SenderID)
@@ -157,7 +145,6 @@ func TestCreatePaymentCreatesPayment(t *testing.T) {
 func TestCreatePaymentReturnsExistingPaymentForDuplicateIdempotencyKey(t *testing.T) {
 	req := CreatePaymentRequest{
 		Amount:         1000,
-		Currency:       domain.CurrencyIDR,
 		SenderID:       uuid.New(),
 		ReceiverID:     uuid.New(),
 		IdempotencyKey: "idem-1",
@@ -188,7 +175,6 @@ func TestCreatePaymentReturnsExistingPaymentForDuplicateIdempotencyKey(t *testin
 func TestCreatePaymentWrapsRepositoryErrors(t *testing.T) {
 	req := CreatePaymentRequest{
 		Amount:         1000,
-		Currency:       domain.CurrencyIDR,
 		SenderID:       uuid.New(),
 		ReceiverID:     uuid.New(),
 		IdempotencyKey: "idem-1",
@@ -213,7 +199,6 @@ func TestCreatePaymentWrapsRepositoryErrors(t *testing.T) {
 func TestCreatePaymentWrapsFindByIdempotencyKeyErrors(t *testing.T) {
 	req := CreatePaymentRequest{
 		Amount:         1000,
-		Currency:       domain.CurrencyIDR,
 		SenderID:       uuid.New(),
 		ReceiverID:     uuid.New(),
 		IdempotencyKey: "idem-1",

@@ -29,10 +29,9 @@ CREATE TABLE accounts (
 CREATE TABLE payments (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     amount BIGINT NOT NULL CHECK (amount > 0),
-    currency VARCHAR(10) NOT NULL,
     sender_id UUID NOT NULL REFERENCES accounts(id),
     receiver_id UUID NOT NULL REFERENCES accounts(id),
-    idempotency_key VARCHAR(100) UNIQUE NOT NULL,
+    idempotency_key VARCHAR(100) NOT NULL,
     status payment_status NOT NULL DEFAULT 'pending',
     error_code VARCHAR(50),
     description TEXT,
@@ -50,7 +49,6 @@ CREATE TABLE ledger_entries (
     type ledger_entry_type NOT NULL,
     direction ledger_direction NOT NULL,
     amount BIGINT NOT NULL CHECK (amount > 0),
-    currency VARCHAR(10) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     UNIQUE(payment_id, account_id, type),

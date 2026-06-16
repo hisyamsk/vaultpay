@@ -41,14 +41,14 @@ Build a **Payment Processing Service** that accepts payment requests via REST AP
 
 ### FR1: Payment Intention
 - `POST /api/v1/payments` - Initiate a payment
-  - Request: `{ amount, currency, sender_id, receiver_id, idempotency_key, description }`
+  - Request: `{ amount, sender_id, receiver_id, idempotency_key, description }`
   - Response: `201 Created` with `{ payment_id, status: "pending" }`
   - Must return **immediately** — do NOT wait for payment completion
   - Idempotency: Same `idempotency_key` returns the same `payment_id`
 
 ### FR2: Payment Status
 - `GET /api/v1/payments/{payment_id}` - Get payment status
-  - Response: `{ payment_id, amount, currency, status, created_at, updated_at, error_code? }`
+  - Response: `{ payment_id, amount, status, created_at, updated_at, error_code? }`
   - Statuses: `pending` → `processing` → `completed` | `failed` | `rejected`
 
 ### FR3: Fraud Screening (Queue Consumer #1)
@@ -216,7 +216,6 @@ Fraud screening team wants to deploy their service independently. Notification t
 - [ ] Add a simple CLI tool to submit payments and check status
 - [ ] Implement distributed tracing with OpenTelemetry
 - [ ] Add a dashboard showing queue depths and payment stats
-- [ ] Support multiple currencies with mock exchange rates
 - [ ] Add webhook delivery with signature verification
 
 ---
