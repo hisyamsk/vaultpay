@@ -28,3 +28,16 @@ type Payment struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+func (s PaymentStatus) CanTransitionTo(next PaymentStatus) bool {
+	switch s {
+	case PaymentStatusPending:
+		return next == PaymentStatusProcessing || next == PaymentStatusRejected
+	case PaymentStatusProcessing:
+		return next == PaymentStatusCompleted || next == PaymentStatusFailed
+	case PaymentStatusCompleted, PaymentStatusFailed, PaymentStatusRejected:
+		return false
+	default:
+		return false
+	}
+}
