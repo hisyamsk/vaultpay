@@ -25,6 +25,7 @@ type CreatePaymentParams struct {
 
 var ErrDuplicateIdempotencyKey = errors.New("duplicate idempotency key")
 var ErrPaymentNotFound = errors.New("payment not found")
+var ErrPaymentStatusConflict = errors.New("payment status conflict")
 
 func NewPaymentRepository(db *pgxpool.Pool) *PaymentRepository {
 	return &PaymentRepository{
@@ -94,13 +95,15 @@ func (r *PaymentRepository) FindById(ctx context.Context, id uuid.UUID) (*domain
 	return payment, nil
 }
 
-func (r *PaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, nextStatus domain.PaymentStatus) error {
-	tag, err := r.db.Exec(ctx, `UPDATE payments SET status = $1 WHERE id = $2;`, nextStatus, id)
+func (r *PaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE payments SET status = $1, updated_at = NOW()
+		WHERE id = $2 AND status = $3;`, toStatus, id, fromStatus)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrPaymentNotFound
+		return ErrPaymentStatusConflict
 	}
 
 	return nil
