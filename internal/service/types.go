@@ -17,12 +17,13 @@ type paymentRepository interface {
 }
 
 var (
-	ErrInvalidPaymentAmount   = errors.New("invalid payment amount")
-	ErrInvalidPaymentSender   = errors.New("invalid payment sender")
-	ErrInvalidPaymentReceiver = errors.New("invalid payment receiver")
-	ErrSameSenderAndReceiver  = errors.New("sender and receiver must differ")
-	ErrMissingIdempotencyKey  = errors.New("missing idempotency key")
-	ErrIdempotencyKeyConflict = errors.New("idempotency key conflict")
+	ErrInvalidPaymentAmount           = errors.New("invalid payment amount")
+	ErrInvalidPaymentSender           = errors.New("invalid payment sender")
+	ErrInvalidPaymentReceiver         = errors.New("invalid payment receiver")
+	ErrSameSenderAndReceiver          = errors.New("sender and receiver must differ")
+	ErrMissingIdempotencyKey          = errors.New("missing idempotency key")
+	ErrIdempotencyKeyConflict         = errors.New("idempotency key conflict")
+	ErrInvalidPaymentStatusTransition = errors.New("invalid payment status transition")
 )
 
 type CreatePaymentRequest struct {

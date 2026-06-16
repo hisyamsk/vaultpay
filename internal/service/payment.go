@@ -64,3 +64,20 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 	return nil, ErrIdempotencyKeyConflict
 
 }
+
+func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID uuid.UUID, nextStatus domain.PaymentStatus) error {
+	payment, err := s.repo.FindById(ctx, paymentID)
+	if err != nil {
+		return fmt.Errorf("find payment by id: %w", err)
+	}
+
+	if !payment.Status.CanTransitionTo(nextStatus) {
+		return ErrInvalidPaymentStatusTransition
+	}
+
+	if err := s.repo.UpdateStatus(ctx, paymentID, payment.Status, nextStatus); err != nil {
+		return fmt.Errorf("update payment status: %w", err)
+	}
+
+	return nil
+}

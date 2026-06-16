@@ -11,8 +11,10 @@ import (
 )
 
 type fakePaymentRepository struct {
-	createFn func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error)
-	findFn   func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
+	createFn       func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error)
+	findFn         func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
+	findByIDFn     func(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
+	updateStatusFn func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error
 }
 
 func (f fakePaymentRepository) Create(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
@@ -27,6 +29,20 @@ func (f fakePaymentRepository) FindByIdempotencyKey(ctx context.Context, idempot
 		return nil, errors.New("unexpected find by idempotency key call")
 	}
 	return f.findFn(ctx, idempotencyKey)
+}
+
+func (f fakePaymentRepository) FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+	if f.findByIDFn == nil {
+		return nil, errors.New("unexpected find by id call")
+	}
+	return f.findByIDFn(ctx, id)
+}
+
+func (f fakePaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
+	if f.updateStatusFn == nil {
+		return errors.New("unexpected update status call")
+	}
+	return f.updateStatusFn(ctx, id, fromStatus, toStatus)
 }
 
 func TestCreatePaymentValidation(t *testing.T) {
@@ -263,5 +279,92 @@ func TestCreatePaymentWrapsFindByIdempotencyKeyErrors(t *testing.T) {
 	}
 	if !errors.Is(err, findErr) {
 		t.Fatalf("expected error to wrap %v, got %v", findErr, err)
+	}
+}
+
+func TestUpdatePaymentStatusUpdatesValidTransition(t *testing.T) {
+	paymentID := uuid.New()
+
+	svc := NewPaymentService(fakePaymentRepository{
+		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			if id != paymentID {
+				t.Fatalf("expected payment ID %s, got %s", paymentID, id)
+			}
+			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusPending}, nil
+		},
+		updateStatusFn: func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
+			if id != paymentID {
+				t.Fatalf("expected payment ID %s, got %s", paymentID, id)
+			}
+			if fromStatus != domain.PaymentStatusPending {
+				t.Fatalf("expected from status %s, got %s", domain.PaymentStatusPending, fromStatus)
+			}
+			if toStatus != domain.PaymentStatusProcessing {
+				t.Fatalf("expected to status %s, got %s", domain.PaymentStatusProcessing, toStatus)
+			}
+			return nil
+		},
+	})
+
+	if err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusProcessing); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestUpdatePaymentStatusRejectsInvalidTransition(t *testing.T) {
+	paymentID := uuid.New()
+	calledUpdate := false
+
+	svc := NewPaymentService(fakePaymentRepository{
+		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusCompleted}, nil
+		},
+		updateStatusFn: func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
+			calledUpdate = true
+			return nil
+		},
+	})
+
+	err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusFailed)
+	if !errors.Is(err, ErrInvalidPaymentStatusTransition) {
+		t.Fatalf("expected error %v, got %v", ErrInvalidPaymentStatusTransition, err)
+	}
+	if calledUpdate {
+		t.Fatal("expected repository update not to be called")
+	}
+}
+
+func TestUpdatePaymentStatusWrapsFindByIDErrors(t *testing.T) {
+	paymentID := uuid.New()
+	findErr := errors.New("lookup failed")
+
+	svc := NewPaymentService(fakePaymentRepository{
+		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			return nil, findErr
+		},
+	})
+
+	err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusProcessing)
+	if !errors.Is(err, findErr) {
+		t.Fatalf("expected error to wrap %v, got %v", findErr, err)
+	}
+}
+
+func TestUpdatePaymentStatusWrapsUpdateStatusErrors(t *testing.T) {
+	paymentID := uuid.New()
+	updateErr := errors.New("update failed")
+
+	svc := NewPaymentService(fakePaymentRepository{
+		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusPending}, nil
+		},
+		updateStatusFn: func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
+			return updateErr
+		},
+	})
+
+	err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusProcessing)
+	if !errors.Is(err, updateErr) {
+		t.Fatalf("expected error to wrap %v, got %v", updateErr, err)
 	}
 }
