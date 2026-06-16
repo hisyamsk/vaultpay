@@ -74,3 +74,34 @@ func (r *PaymentRepository) FindByIdempotencyKey(ctx context.Context, idempotenc
 
 	return payment, nil
 }
+
+func (r *PaymentRepository) FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+	payment := &domain.Payment{}
+	err := r.db.QueryRow(ctx, `
+		SELECT id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+		FROM payments
+		WHERE id = $1`, id).Scan(
+		&payment.ID, &payment.Amount, &payment.SenderID, &payment.ReceiverID, &payment.IdempotencyKey, &payment.Status,
+		&payment.ErrorCode, &payment.Description, &payment.CreatedAt, &payment.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPaymentNotFound
+		}
+		return nil, err
+	}
+
+	return payment, nil
+}
+
+func (r *PaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, nextStatus domain.PaymentStatus) error {
+	tag, err := r.db.Exec(ctx, `UPDATE payments SET status = $1 WHERE id = $2;`, nextStatus, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrPaymentNotFound
+	}
+
+	return nil
+}
