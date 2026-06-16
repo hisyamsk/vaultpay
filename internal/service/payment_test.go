@@ -111,9 +111,10 @@ func TestCreatePaymentCreatesPayment(t *testing.T) {
 		Amount:         1000,
 		SenderID:       uuid.New(),
 		ReceiverID:     uuid.New(),
-		IdempotencyKey: "idem-1",
+		IdempotencyKey: " idem-1 ",
 	}
 	expected := &domain.Payment{ID: uuid.New()}
+	expectedIdempotencyKey := "idem-1"
 
 	svc := NewPaymentService(fakePaymentRepository{
 		createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
@@ -126,8 +127,8 @@ func TestCreatePaymentCreatesPayment(t *testing.T) {
 			if params.ReceiverID != req.ReceiverID {
 				t.Fatalf("expected receiver ID %s, got %s", req.ReceiverID, params.ReceiverID)
 			}
-			if params.IdempotencyKey != req.IdempotencyKey {
-				t.Fatalf("expected idempotency key %q, got %q", req.IdempotencyKey, params.IdempotencyKey)
+			if params.IdempotencyKey != expectedIdempotencyKey {
+				t.Fatalf("expected idempotency key %q, got %q", expectedIdempotencyKey, params.IdempotencyKey)
 			}
 			return expected, nil
 		},
@@ -149,7 +150,13 @@ func TestCreatePaymentReturnsExistingPaymentForDuplicateIdempotencyKey(t *testin
 		ReceiverID:     uuid.New(),
 		IdempotencyKey: "idem-1",
 	}
-	existing := &domain.Payment{ID: uuid.New(), IdempotencyKey: req.IdempotencyKey}
+	existing := &domain.Payment{
+		ID:             uuid.New(),
+		Amount:         req.Amount,
+		SenderID:       req.SenderID,
+		ReceiverID:     req.ReceiverID,
+		IdempotencyKey: req.IdempotencyKey,
+	}
 
 	svc := NewPaymentService(fakePaymentRepository{
 		createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
@@ -169,6 +176,42 @@ func TestCreatePaymentReturnsExistingPaymentForDuplicateIdempotencyKey(t *testin
 	}
 	if payment != existing {
 		t.Fatalf("expected existing payment %#v, got %#v", existing, payment)
+	}
+}
+
+func TestCreatePaymentReturnsConflictForDuplicateIdempotencyKeyWithDifferentIntent(t *testing.T) {
+	req := CreatePaymentRequest{
+		Amount:         1000,
+		SenderID:       uuid.New(),
+		ReceiverID:     uuid.New(),
+		IdempotencyKey: "idem-1",
+	}
+	existing := &domain.Payment{
+		ID:             uuid.New(),
+		Amount:         req.Amount + 1,
+		SenderID:       req.SenderID,
+		ReceiverID:     req.ReceiverID,
+		IdempotencyKey: req.IdempotencyKey,
+	}
+
+	svc := NewPaymentService(fakePaymentRepository{
+		createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
+			return nil, repository.ErrDuplicateIdempotencyKey
+		},
+		findFn: func(ctx context.Context, idempotencyKey string) (*domain.Payment, error) {
+			if idempotencyKey != req.IdempotencyKey {
+				t.Fatalf("expected idempotency key %q, got %q", req.IdempotencyKey, idempotencyKey)
+			}
+			return existing, nil
+		},
+	})
+
+	payment, err := svc.CreatePayment(context.Background(), req)
+	if payment != nil {
+		t.Fatalf("expected nil payment, got %#v", payment)
+	}
+	if !errors.Is(err, ErrIdempotencyKeyConflict) {
+		t.Fatalf("expected error %v, got %v", ErrIdempotencyKeyConflict, err)
 	}
 }
 

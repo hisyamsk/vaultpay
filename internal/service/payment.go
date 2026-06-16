@@ -45,17 +45,22 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 	}
 
 	p, err := s.repo.Create(ctx, repoParams)
-	if err != nil {
-		if errors.Is(err, repository.ErrDuplicateIdempotencyKey) {
+	if err == nil {
+		return p, nil
+	}
 
-			existing, err := s.repo.FindByIdempotencyKey(ctx, idempotencyKey)
-			if err != nil {
-				return nil, fmt.Errorf("find payment by idempotency key: %w", err)
-			}
-			return existing, nil
-		}
+	if !errors.Is(err, repository.ErrDuplicateIdempotencyKey) {
 		return nil, fmt.Errorf("create payment: %w", err)
 	}
 
-	return p, nil
+	existing, err := s.repo.FindByIdempotencyKey(ctx, idempotencyKey)
+	if err != nil {
+		return nil, fmt.Errorf("find payment by idempotency key: %w", err)
+	}
+
+	if req.samePaymentIntent(existing) {
+		return existing, nil
+	}
+	return nil, ErrIdempotencyKeyConflict
+
 }

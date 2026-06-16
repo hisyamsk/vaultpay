@@ -20,6 +20,7 @@ var (
 	ErrInvalidPaymentReceiver = errors.New("invalid payment receiver")
 	ErrSameSenderAndReceiver  = errors.New("sender and receiver must differ")
 	ErrMissingIdempotencyKey  = errors.New("missing idempotency key")
+	ErrIdempotencyKeyConflict = errors.New("idempotency key conflict")
 )
 
 type CreatePaymentRequest struct {
@@ -32,4 +33,10 @@ type CreatePaymentRequest struct {
 
 type PaymentService struct {
 	repo paymentRepository
+}
+
+func (req *CreatePaymentRequest) samePaymentIntent(payment *domain.Payment) bool {
+	return (req.SenderID == payment.SenderID &&
+		req.ReceiverID == payment.ReceiverID &&
+		req.Amount == payment.Amount)
 }
