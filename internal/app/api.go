@@ -23,7 +23,7 @@ func NewAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) (*API, 
 		return nil, err
 	}
 
-	handlers := handler.GetHandlers(logger)
+	handlers := handler.GetHandlers(pool, logger)
 	server := &http.Server{
 		Addr:    cfg.HttpAddr,
 		Handler: newRouter(handlers...),
