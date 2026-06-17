@@ -43,3 +43,11 @@ func (req *CreatePaymentRequest) samePaymentIntent(payment *domain.Payment) bool
 		req.ReceiverID == payment.ReceiverID &&
 		req.Amount == payment.Amount)
 }
+
+func IsInvalidCreatePaymentRequest(err error) bool {
+	return errors.Is(err, ErrInvalidPaymentAmount) ||
+		errors.Is(err, ErrInvalidPaymentSender) ||
+		errors.Is(err, ErrInvalidPaymentReceiver) ||
+		errors.Is(err, ErrSameSenderAndReceiver) ||
+		errors.Is(err, ErrMissingIdempotencyKey)
+}
