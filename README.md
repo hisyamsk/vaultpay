@@ -59,6 +59,7 @@ Build a **Payment Processing Service** that accepts payment requests via REST AP
 
 ### FR4: Payment Execution (Queue Consumer #2)
 - Consumes from `fraud.checked` queue
+- Atomically moves the payment from `pending` to `processing` and deducts/reserves the sender balance before calling the external processor
 - Simulate calling external payment processor (random 10% failure rate)
 - On failure: retry up to 3 times with exponential backoff
 - After all retries exhausted: mark as `failed`
@@ -72,8 +73,11 @@ Build a **Payment Processing Service** that accepts payment requests via REST AP
 
 ### FR6: Account Ledger
 - Maintain account balances for sender and receiver
-- Deduct from sender on `pending`, credit receiver on `completed`
-- Refund sender on `failed` or `rejected`
+- Do not deduct sender balance when the payment is first created
+- If fraud screening rejects the payment, mark it `rejected` with no balance movement
+- After fraud approval, deduct/reserve sender balance when the payment moves from `pending` to `processing`
+- Credit receiver on `completed`
+- Refund sender on processor `failed` only if the sender was already deducted in `processing`
 - `GET /api/v1/accounts/{account_id}` returns current balance and transaction history
 
 ---
@@ -317,7 +321,7 @@ volumes:
 ## Questions to Think About (Not Required to Submit)
 
 1. What happens if a worker crashes mid-processing? How do you ensure exactly-once semantics?
-2. How would you handle the "double refund" problem if both fraud rejection and payment failure happen?
+2. How would you handle the "double refund" problem if duplicate processor-failure messages are delivered?
 3. What if the queue itself loses messages? How do you recover?
 4. How would this design change if you needed real-time payment status updates via WebSocket?
 5. What's the tradeoff between using Redis Streams vs RabbitMQ for this use case?
