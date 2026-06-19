@@ -14,11 +14,6 @@ CREATE TYPE ledger_entry_type AS ENUM (
     'refund'
 );
 
-CREATE TYPE ledger_direction AS ENUM (
-    'debit',
-    'credit'
-);
-
 CREATE TABLE accounts (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     balance BIGINT NOT NULL CHECK (balance >= 0),
@@ -47,7 +42,6 @@ CREATE TABLE ledger_entries (
     payment_id UUID NOT NULL REFERENCES payments(id),
     account_id UUID NOT NULL REFERENCES accounts(id),
     type ledger_entry_type NOT NULL,
-    direction ledger_direction NOT NULL,
     amount BIGINT NOT NULL CHECK (amount > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
