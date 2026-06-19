@@ -92,3 +92,44 @@ func (r *PaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, from
 
 	return nil
 }
+
+func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, accountID uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var amount int64
+	err = tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&amount)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrPaymentNotFound
+		}
+		return err
+	}
+
+	var balance int64
+	err = tx.QueryRow(ctx, `
+		UPDATE accounts
+		SET balance = balance - $1, status = $3
+		WHERE id = $2 AND balance >= $1
+		RETURNING BALANCE`,
+		amount, accountID, domain.PaymentStatusProcessing).Scan(&balance)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInsufficientBalance
+		}
+		return err
+	}
+
+	// TODO: insert ledger entry
+	// tag, err := tx.Exec(ctx, `
+	// 	INSERT INTO ledger_entries
+	// 	SET(payment_id, account_id, type, amount)
+	// 	VALUES($1, $2, $3, $4)
+	// `)
+
+	return tx.Commit(ctx)
+}
