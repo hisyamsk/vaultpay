@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,6 +18,14 @@ type CreatePaymentParams struct {
 	ReceiverID     uuid.UUID
 	IdempotencyKey string
 	Description    *string
+}
+
+type ProcessPaymentParams struct {
+	PaymentID   uuid.UUID
+	AccountID   uuid.UUID
+	Amount      int64
+	Status      domain.PaymentStatus
+	PaymentType domain.LedgerEntryType
 }
 
 var ErrDuplicateIdempotencyKey = errors.New("duplicate idempotency key")

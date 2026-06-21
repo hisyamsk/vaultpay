@@ -93,15 +93,15 @@ func (r *PaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, from
 	return nil
 }
 
-func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, accountID uuid.UUID) error {
+func (r *PaymentRepository) ProcessPayment(ctx context.Context, params ProcessPaymentParams) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	var amount int64
-	err = tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&amount)
+	var balance int64
+	err = tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id = $1 FOR UPDATE`, params.AccountID).Scan(&balance)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrPaymentNotFound
@@ -109,13 +109,13 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 		return err
 	}
 
-	var balance int64
+	var newBalance int64
 	err = tx.QueryRow(ctx, `
 		UPDATE accounts
 		SET balance = balance - $1, status = $3
 		WHERE id = $2 AND balance >= $1
-		RETURNING BALANCE`,
-		amount, accountID, domain.PaymentStatusProcessing).Scan(&balance)
+		RETURNING balance`,
+		params.Amount, params.AccountID, params.Status).Scan(&newBalance)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -125,11 +125,13 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 	}
 
 	// TODO: insert ledger entry
-	// tag, err := tx.Exec(ctx, `
-	// 	INSERT INTO ledger_entries
-	// 	SET(payment_id, account_id, type, amount)
-	// 	VALUES($1, $2, $3, $4)
-	// `)
+	var ledgerID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		INSERT INTO ledger_entries
+		SET(payment_id, account_id, type, amount)
+		VALUES($1, $2, $3, $4)
+		RETURNING id
+	`, params.PaymentID, params.AccountID, params.PaymentType, params.Amount).Scan(&ledgerID)
 
 	return tx.Commit(ctx)
 }
