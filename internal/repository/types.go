@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
-	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,16 +19,11 @@ type CreatePaymentParams struct {
 	Description    *string
 }
 
-type ProcessPaymentParams struct {
-	PaymentID   uuid.UUID
-	AccountID   uuid.UUID
-	Amount      int64
-	Status      domain.PaymentStatus
-	PaymentType domain.LedgerEntryType
-}
-
 var ErrDuplicateIdempotencyKey = errors.New("duplicate idempotency key")
 var ErrPaymentNotFound = errors.New("payment not found")
 var ErrAccountNotFound = errors.New("account not found")
 var ErrPaymentStatusConflict = errors.New("payment status conflict")
 var ErrInsufficientBalance = errors.New("insufficient balance")
+var ErrPaymentStatusTerminal = errors.New("payment status terminal")
+var ErrPaymentStatusAlreadyProcessing = errors.New("payment status already processing")
+var ErrUnrecognizedPaymentStatus = errors.New("unrecognized payment status")

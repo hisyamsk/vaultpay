@@ -5,5 +5,4 @@ type LedgerEntryType string
 const (
 	LedgerEntryTypeDebit  LedgerEntryType = "debit"
 	LedgerEntryTypeCredit LedgerEntryType = "credit"
-	LedgerEntryTypeDebit  LedgerEntryType = "debit"
 )
