@@ -30,5 +30,6 @@ type ProcessPaymentParams struct {
 
 var ErrDuplicateIdempotencyKey = errors.New("duplicate idempotency key")
 var ErrPaymentNotFound = errors.New("payment not found")
+var ErrAccountNotFound = errors.New("account not found")
 var ErrPaymentStatusConflict = errors.New("payment status conflict")
 var ErrInsufficientBalance = errors.New("insufficient balance")

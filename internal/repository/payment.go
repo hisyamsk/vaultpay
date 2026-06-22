@@ -100,8 +100,14 @@ func (r *PaymentRepository) ProcessPayment(ctx context.Context, params ProcessPa
 	}
 	defer tx.Rollback(ctx)
 
-	var balance int64
-	err = tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id = $1 FOR UPDATE`, params.AccountID).Scan(&balance)
+	var currStatus domain.PaymentStatus
+	err = tx.QueryRow(ctx, `
+		SELECT status
+		FROM payments
+		WHERE id = $1
+		FOR UPDATE
+	`, params.Status, params.PaymentID).Scan(&currStatus)
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrPaymentNotFound
@@ -109,29 +115,55 @@ func (r *PaymentRepository) ProcessPayment(ctx context.Context, params ProcessPa
 		return err
 	}
 
-	var newBalance int64
-	err = tx.QueryRow(ctx, `
-		UPDATE accounts
-		SET balance = balance - $1, status = $3
-		WHERE id = $2 AND balance >= $1
-		RETURNING balance`,
-		params.Amount, params.AccountID, params.Status).Scan(&newBalance)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrInsufficientBalance
+	switch currStatus {
+	case domain.PaymentStatusProcessing:
+		return nil // return existing
+	case domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
+		return nil // terminal return no - op
+	case domain.PaymentStatusPending:
+		_, err = tx.Exec(ctx, `
+			SELECT balance 
+			FROM accounts
+			WHERE id = $1 
+			FOR UPDATE
+		`, params.AccountID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrAccountNotFound
+			}
+			return err
 		}
-		return err
+
+		_, err = tx.Exec(ctx, `
+			UPDATE accounts
+			SET balance = balance - $1
+			WHERE id = $2 AND balance >= $1
+		`, params.Amount, params.AccountID)
+
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInsufficientBalance
+			}
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO ledger_entries(payment_id, account_id, type, amount)
+			VALUES($1, $2, $3, $4)
+		`, params.PaymentID, params.AccountID, params.PaymentType, params.Amount)
+
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, `
+			UPDATE payments
+			SET status = $1
+			WHERE id = $2
+		`, params.Status, params.PaymentID)
+
+		return tx.Commit(ctx)
 	}
 
-	// TODO: insert ledger entry
-	var ledgerID uuid.UUID
-	err = tx.QueryRow(ctx, `
-		INSERT INTO ledger_entries
-		SET(payment_id, account_id, type, amount)
-		VALUES($1, $2, $3, $4)
-		RETURNING id
-	`, params.PaymentID, params.AccountID, params.PaymentType, params.Amount).Scan(&ledgerID)
-
-	return tx.Commit(ctx)
+	return nil // unrecognized payment status
 }
