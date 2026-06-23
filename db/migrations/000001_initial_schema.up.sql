@@ -11,7 +11,6 @@ CREATE TYPE payment_status AS ENUM (
 CREATE TYPE ledger_entry_type AS ENUM (
     'debit',
     'credit',
-    'refund'
 );
 
 CREATE TABLE accounts (
@@ -45,13 +44,7 @@ CREATE TABLE ledger_entries (
     amount BIGINT NOT NULL CHECK (amount > 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    UNIQUE(payment_id, account_id, type),
-
-    CHECK (
-        (type = 'debit' AND direction = 'debit') OR
-        (type = 'credit' AND direction = 'credit') OR
-        (type = 'refund' AND direction = 'credit')
-    )
+    UNIQUE(payment_id, account_id, type)
 );
 
 CREATE TABLE payment_events (
