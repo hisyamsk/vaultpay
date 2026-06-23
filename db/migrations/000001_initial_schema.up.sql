@@ -10,7 +10,7 @@ CREATE TYPE payment_status AS ENUM (
 
 CREATE TYPE ledger_entry_type AS ENUM (
     'debit',
-    'credit',
+    'credit'
 );
 
 CREATE TABLE accounts (
