@@ -184,3 +184,74 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 
 	return "", ErrUnrecognizedPaymentStatus
 }
+
+func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	var status domain.PaymentStatus
+	var receiverID uuid.UUID
+	var amount int64
+
+	err = tx.QueryRow(ctx, `
+		SELECT status, receiver_id, amount
+		FROM payments
+		WHERE id = $1
+		FOR UPDATE
+	`, paymentID).Scan(&status, &receiverID, &amount)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrPaymentNotFound
+		}
+		return "", err
+	}
+
+	switch status {
+	case domain.PaymentStatusPending:
+		return "", ErrInvalidStatusTransition
+	case domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
+		return status, nil
+	case domain.PaymentStatusProcessing:
+		var balance int64
+		err = tx.QueryRow(ctx, `
+			UPDATE accounts
+			SET balance = balance + $1, updated_at = NOW()
+			WHERE id = $2
+			RETURNING balance
+		`, amount, receiverID).Scan(&balance)
+
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return "", ErrAccountNotFound
+			}
+			return "", err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO ledger_entries(payment_id, account_id, type, amount)
+			VALUES($1, $2, $3, $4)
+		`, paymentID, receiverID, domain.LedgerEntryTypeCredit, amount)
+
+		if err != nil {
+			return "", err
+		}
+
+		_, err = tx.Exec(ctx, `
+			UPDATE payments
+			SET status = $1, updated_at = NOW()
+			WHERE id = $2
+		`, domain.PaymentStatusCompleted, paymentID)
+
+		if err != nil {
+			return "", err
+		}
+
+		return domain.PaymentStatusCompleted, tx.Commit(ctx)
+	}
+
+	return "", ErrUnrecognizedPaymentStatus
+}
