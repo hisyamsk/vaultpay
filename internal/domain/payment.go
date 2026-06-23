@@ -7,6 +7,7 @@ import (
 )
 
 type PaymentStatus string
+type ErrorCode string
 
 const (
 	PaymentStatusPending    PaymentStatus = "pending"
@@ -14,6 +15,8 @@ const (
 	PaymentStatusCompleted  PaymentStatus = "completed"
 	PaymentStatusFailed     PaymentStatus = "failed"
 	PaymentStatusRejected   PaymentStatus = "rejected"
+
+	ErrorCodeInsufficientFunds ErrorCode = "insufficient_funds"
 )
 
 type Payment struct {
