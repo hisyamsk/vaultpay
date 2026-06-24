@@ -256,7 +256,7 @@ func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymen
 	return "", ErrUnrecognizedPaymentStatus
 }
 
-func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error) {
+func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (domain.PaymentStatus, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -311,9 +311,9 @@ func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID 
 
 		_, err = tx.Exec(ctx, `
 			UPDATE payments
-			SET status = $1, updated_at = NOW()
-			WHERE id = $2
-		`, domain.PaymentStatusFailed, paymentID)
+			SET status = $1, error_code = $2, updated_at = NOW()
+			WHERE id = $3
+		`, domain.PaymentStatusFailed, errorCode, paymentID)
 
 		if err != nil {
 			return "", err
