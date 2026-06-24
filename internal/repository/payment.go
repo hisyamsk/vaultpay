@@ -278,6 +278,8 @@ func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID 
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrPaymentNotFound
 		}
+
+		return "", err
 	}
 
 	switch status {
