@@ -39,3 +39,15 @@ migrate-down:
 
 migrate-version:
 	migrate -database "$(DATABASE_URL)" -path db/migrations version
+
+migrate-test-up:
+	migrate -database "$(TEST_DATABASE_URL)" -path db/migrations up
+
+migrate-test-down:
+	migrate -database "$(TEST_DATABASE_URL)" -path db/migrations down 1
+
+migrate-test-version:
+	migrate -database "$(TEST_DATABASE_URL)" -path db/migrations version
+
+migrate-all-up: migrate-up migrate-test-up
+migrate-all-down: migrate-down migrate-test-down
