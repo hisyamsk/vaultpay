@@ -14,43 +14,18 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
-	"github.com/hisyamsk/vaultpay/internal/repository"
 	"github.com/hisyamsk/vaultpay/internal/service"
 )
 
-type fakePaymentRepository struct {
-	createFn   func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error)
-	findByKey  func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
-	findByIDFn func(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
-	updateFn   func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error
+type fakePaymentService struct {
+	createPaymentFn func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error)
 }
 
-func (f fakePaymentRepository) Create(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
-	if f.createFn == nil {
-		return nil, errors.New("unexpected create call")
+func (f fakePaymentService) CreatePayment(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
+	if f.createPaymentFn == nil {
+		return nil, errors.New("unexpected create payment call")
 	}
-	return f.createFn(ctx, params)
-}
-
-func (f fakePaymentRepository) FindByIdempotencyKey(ctx context.Context, idempotencyKey string) (*domain.Payment, error) {
-	if f.findByKey == nil {
-		return nil, errors.New("unexpected find by idempotency key call")
-	}
-	return f.findByKey(ctx, idempotencyKey)
-}
-
-func (f fakePaymentRepository) FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
-	if f.findByIDFn == nil {
-		return nil, errors.New("unexpected find by id call")
-	}
-	return f.findByIDFn(ctx, id)
-}
-
-func (f fakePaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
-	if f.updateFn == nil {
-		return errors.New("unexpected update status call")
-	}
-	return f.updateFn(ctx, id, fromStatus, toStatus)
+	return f.createPaymentFn(ctx, req)
 }
 
 func TestCreatePaymentSuccess(t *testing.T) {
@@ -59,22 +34,22 @@ func TestCreatePaymentSuccess(t *testing.T) {
 	paymentID := uuid.New()
 	description := "rent"
 
-	handler := newTestPaymentHandler(fakePaymentRepository{
-		createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
-			if params.Amount != 1000 {
-				t.Fatalf("expected amount 1000, got %d", params.Amount)
+	handler := newTestPaymentHandler(fakePaymentService{
+		createPaymentFn: func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
+			if req.Amount != 1000 {
+				t.Fatalf("expected amount 1000, got %d", req.Amount)
 			}
-			if params.SenderID != senderID {
-				t.Fatalf("expected sender ID %s, got %s", senderID, params.SenderID)
+			if req.SenderID != senderID {
+				t.Fatalf("expected sender ID %s, got %s", senderID, req.SenderID)
 			}
-			if params.ReceiverID != receiverID {
-				t.Fatalf("expected receiver ID %s, got %s", receiverID, params.ReceiverID)
+			if req.ReceiverID != receiverID {
+				t.Fatalf("expected receiver ID %s, got %s", receiverID, req.ReceiverID)
 			}
-			if params.IdempotencyKey != "idem-1" {
-				t.Fatalf("expected idempotency key idem-1, got %q", params.IdempotencyKey)
+			if req.IdempotencyKey != "idem-1" {
+				t.Fatalf("expected idempotency key idem-1, got %q", req.IdempotencyKey)
 			}
-			if params.Description == nil || *params.Description != description {
-				t.Fatalf("expected description %q, got %#v", description, params.Description)
+			if req.Description == nil || *req.Description != description {
+				t.Fatalf("expected description %q, got %#v", description, req.Description)
 			}
 
 			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusPending}, nil
@@ -190,8 +165,8 @@ func TestCreatePaymentRejectsInvalidRequestsBeforeService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := newTestPaymentHandler(fakePaymentRepository{
-				createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
+			handler := newTestPaymentHandler(fakePaymentService{
+				createPaymentFn: func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
 					t.Fatal("expected service not to be called")
 					return nil, nil
 				},
@@ -211,17 +186,16 @@ func TestCreatePaymentMapsServiceErrors(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		repo           fakePaymentRepository
+		svc            fakePaymentService
 		body           string
 		wantStatus     int
 		wantNotContain string
 	}{
 		{
 			name: "missing idempotency key",
-			repo: fakePaymentRepository{
-				createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
-					t.Fatal("expected repository create not to be called")
-					return nil, nil
+			svc: fakePaymentService{
+				createPaymentFn: func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
+					return nil, service.ErrMissingIdempotencyKey
 				},
 			},
 			body:       `{"amount":1000,"sender_id":"` + senderID.String() + `","receiver_id":"` + receiverID.String() + `","idempotency_key":"   "}`,
@@ -229,10 +203,9 @@ func TestCreatePaymentMapsServiceErrors(t *testing.T) {
 		},
 		{
 			name: "same sender and receiver",
-			repo: fakePaymentRepository{
-				createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
-					t.Fatal("expected repository create not to be called")
-					return nil, nil
+			svc: fakePaymentService{
+				createPaymentFn: func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
+					return nil, service.ErrSameSenderAndReceiver
 				},
 			},
 			body:       `{"amount":1000,"sender_id":"` + senderID.String() + `","receiver_id":"` + senderID.String() + `","idempotency_key":"idem-1"}`,
@@ -240,18 +213,9 @@ func TestCreatePaymentMapsServiceErrors(t *testing.T) {
 		},
 		{
 			name: "idempotency key conflict",
-			repo: fakePaymentRepository{
-				createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
-					return nil, repository.ErrDuplicateIdempotencyKey
-				},
-				findByKey: func(ctx context.Context, idempotencyKey string) (*domain.Payment, error) {
-					return &domain.Payment{
-						ID:             uuid.New(),
-						Amount:         2000,
-						SenderID:       senderID,
-						ReceiverID:     receiverID,
-						IdempotencyKey: idempotencyKey,
-					}, nil
+			svc: fakePaymentService{
+				createPaymentFn: func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
+					return nil, service.ErrIdempotencyKeyConflict
 				},
 			},
 			body:       validCreatePaymentBody(senderID, receiverID),
@@ -259,8 +223,8 @@ func TestCreatePaymentMapsServiceErrors(t *testing.T) {
 		},
 		{
 			name: "unexpected repository error",
-			repo: fakePaymentRepository{
-				createFn: func(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
+			svc: fakePaymentService{
+				createPaymentFn: func(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error) {
 					return nil, errors.New("db unavailable")
 				},
 			},
@@ -272,7 +236,7 @@ func TestCreatePaymentMapsServiceErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := newTestPaymentHandler(tt.repo)
+			handler := newTestPaymentHandler(tt.svc)
 
 			rr := performCreatePaymentRequest(handler, "application/json", tt.body)
 			if rr.Code != tt.wantStatus {
@@ -285,9 +249,9 @@ func TestCreatePaymentMapsServiceErrors(t *testing.T) {
 	}
 }
 
-func newTestPaymentHandler(repo fakePaymentRepository) *paymentHandler {
+func newTestPaymentHandler(svc paymentService) *paymentHandler {
 	return NewPaymentHandler(
-		service.NewPaymentService(repo),
+		svc,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 }

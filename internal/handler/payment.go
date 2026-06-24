@@ -14,9 +14,9 @@ import (
 	"github.com/hisyamsk/vaultpay/internal/service"
 )
 
-func NewPaymentHandler(service *service.PaymentService, logger *slog.Logger) *paymentHandler {
+func NewPaymentHandler(paymentService paymentService, logger *slog.Logger) *paymentHandler {
 	return &paymentHandler{
-		service: service,
+		service: paymentService,
 		logger:  logger,
 	}
 }

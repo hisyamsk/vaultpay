@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 
+	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/hisyamsk/vaultpay/internal/service"
 )
 
@@ -26,7 +28,7 @@ type errorResponse struct {
 }
 
 type paymentHandler struct {
-	service *service.PaymentService
+	service paymentService
 	logger  *slog.Logger
 }
 
@@ -41,4 +43,8 @@ type createPaymentRequest struct {
 type createPaymentResponse struct {
 	PaymentID string `json:"payment_id"`
 	Status    string `json:"status"`
+}
+
+type paymentService interface {
+	CreatePayment(ctx context.Context, req service.CreatePaymentRequest) (*domain.Payment, error)
 }
