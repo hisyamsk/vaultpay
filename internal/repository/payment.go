@@ -8,10 +8,9 @@ import (
 	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewPaymentRepository(db *pgxpool.Pool) *PaymentRepository {
+func NewPaymentRepository(db dbtx) *PaymentRepository {
 	return &PaymentRepository{
 		db: db,
 	}

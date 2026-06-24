@@ -1,14 +1,22 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type PaymentRepository struct {
-	db *pgxpool.Pool
+	db dbtx
+}
+
+type dbtx interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, arguments ...any) pgx.Row
 }
 
 type CreatePaymentParams struct {
