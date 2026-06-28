@@ -295,7 +295,9 @@ func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID 
 	}
 
 	switch payment.Status {
-	case domain.PaymentStatusPending, domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
+	case domain.PaymentStatusPending:
+		return nil, ErrInvalidStatusTransition
+	case domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
 		return payment, nil
 	case domain.PaymentStatusProcessing:
 		var balance int64
