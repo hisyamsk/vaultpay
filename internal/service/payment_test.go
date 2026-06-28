@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/hisyamsk/vaultpay/internal/repository"
+	"github.com/stretchr/testify/require"
 )
 
 type fakePaymentRepository struct {
@@ -391,4 +392,209 @@ func TestRejectPendingPaymentWrapsUpdateStatusErrors(t *testing.T) {
 	if !errors.Is(err, updateErr) {
 		t.Fatalf("expected error to wrap %v, got %v", updateErr, err)
 	}
+}
+
+func TestStartApprovedPaymentProcessing(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects empty payment id", func(t *testing.T) {
+		svc := NewPaymentService(fakePaymentRepository{})
+
+		payment, err := svc.StartApprovedPaymentProcessing(ctx, uuid.Nil)
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, ErrInvalidPaymentID)
+	})
+
+	t.Run("returns repository payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusProcessing,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			startApprovedPaymentProcessingFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				require.Equal(t, paymentID, id)
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.StartApprovedPaymentProcessing(ctx, paymentID)
+
+		require.NoError(t, err)
+		require.Same(t, expected, payment)
+	})
+
+	t.Run("returns idempotent terminal payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusFailed,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			startApprovedPaymentProcessingFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.StartApprovedPaymentProcessing(ctx, paymentID)
+
+		require.NoError(t, err)
+		require.Equal(t, domain.PaymentStatusFailed, payment.Status)
+	})
+
+	t.Run("wraps repository errors", func(t *testing.T) {
+		paymentID := uuid.New()
+		repoErr := errors.New("repo failed")
+		svc := NewPaymentService(fakePaymentRepository{
+			startApprovedPaymentProcessingFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				return nil, repoErr
+			},
+		})
+
+		payment, err := svc.StartApprovedPaymentProcessing(ctx, paymentID)
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, repoErr)
+	})
+}
+
+func TestCompleteProcessedPayment(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects empty payment id", func(t *testing.T) {
+		svc := NewPaymentService(fakePaymentRepository{})
+
+		payment, err := svc.CompleteProcessedPayment(ctx, uuid.Nil)
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, ErrInvalidPaymentID)
+	})
+
+	t.Run("returns completed payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusCompleted,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			completeProcessedPaymentFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				require.Equal(t, paymentID, id)
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.CompleteProcessedPayment(ctx, paymentID)
+
+		require.NoError(t, err)
+		require.Same(t, expected, payment)
+	})
+
+	t.Run("returns idempotent no-op payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusFailed,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			completeProcessedPaymentFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.CompleteProcessedPayment(ctx, paymentID)
+
+		require.NoError(t, err)
+		require.Equal(t, domain.PaymentStatusFailed, payment.Status)
+	})
+
+	t.Run("wraps repository errors", func(t *testing.T) {
+		paymentID := uuid.New()
+		repoErr := errors.New("repo failed")
+		svc := NewPaymentService(fakePaymentRepository{
+			completeProcessedPaymentFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				return nil, repoErr
+			},
+		})
+
+		payment, err := svc.CompleteProcessedPayment(ctx, paymentID)
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, repoErr)
+	})
+}
+
+func TestFailProcessedPayment(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects empty payment id", func(t *testing.T) {
+		svc := NewPaymentService(fakePaymentRepository{})
+
+		payment, err := svc.FailProcessedPayment(ctx, uuid.Nil, "processor_declined")
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, ErrInvalidPaymentID)
+	})
+
+	t.Run("rejects empty failure code", func(t *testing.T) {
+		svc := NewPaymentService(fakePaymentRepository{})
+
+		payment, err := svc.FailProcessedPayment(ctx, uuid.New(), "   ")
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, ErrInvalidPaymentFailureCode)
+	})
+
+	t.Run("passes trimmed failure code and returns failed payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusFailed,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			failProcessedPaymentFn: func(ctx context.Context, id uuid.UUID, errorCode string) (*domain.Payment, error) {
+				require.Equal(t, paymentID, id)
+				require.Equal(t, "processor_declined", errorCode)
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.FailProcessedPayment(ctx, paymentID, " processor_declined ")
+
+		require.NoError(t, err)
+		require.Same(t, expected, payment)
+	})
+
+	t.Run("returns idempotent no-op payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusCompleted,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			failProcessedPaymentFn: func(ctx context.Context, id uuid.UUID, errorCode string) (*domain.Payment, error) {
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.FailProcessedPayment(ctx, paymentID, "processor_declined")
+
+		require.NoError(t, err)
+		require.Equal(t, domain.PaymentStatusCompleted, payment.Status)
+	})
+
+	t.Run("wraps repository errors", func(t *testing.T) {
+		paymentID := uuid.New()
+		repoErr := errors.New("repo failed")
+		svc := NewPaymentService(fakePaymentRepository{
+			failProcessedPaymentFn: func(ctx context.Context, id uuid.UUID, errorCode string) (*domain.Payment, error) {
+				return nil, repoErr
+			},
+		})
+
+		payment, err := svc.FailProcessedPayment(ctx, paymentID, "processor_declined")
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, repoErr)
+	})
 }
