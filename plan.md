@@ -1,205 +1,255 @@
-# Payment Processing Service/Repository Plan
+# Fraud Worker Flow Plan
 
-  ## Summary
+## Goal
 
-  Build the next slice as worker-facing service methods, not an HTTP update handler.
+Build the fraud worker slice.
 
-  Chosen design: deduct sender after fraud approval. So POST /payments still only creates a pending payment. After fraud passes, the future payment worker calls a service method that
-  atomically moves the payment into processing and debits the sender.
+The fraud worker consumes payment messages for newly created pending payments, runs fraud screening, then moves the payment into the correct next state:
 
-  Keep the current status model:
+```txt
+pending -> rejected
+pending -> processing
+```
 
-  pending -> processing -> completed | failed
-  pending -> rejected
+If fraud fails, reject the payment before money moves.
+If fraud passes, call `StartApprovedPaymentProcessing`, which atomically debits the sender and moves the payment to `processing`.
 
-  Use processing to mean: fraud passed and sender funds have been debited/reserved.
+Core pattern: **idempotent worker**.
 
-  ## Key Changes
+The queue may deliver the same message more than once, so the worker must always treat the database as the source of truth and make duplicate delivery safe.
 
-  Add three worker-facing service methods:
+## Proposed Structure
 
-  StartApprovedPaymentProcessing(ctx, paymentID) (*domain.Payment, error)
-  CompleteProcessedPayment(ctx, paymentID) (*domain.Payment, error)
-  FailProcessedPayment(ctx, paymentID, errorCode) (*domain.Payment, error)
+Add only the packages/files needed for this slice:
 
-  Why three methods: money movement is not one generic status update. Debit, credit, refund, ledger insert, error code handling, and status transition each have different invariants.
+```txt
+internal/
+  worker/
+    fraud_worker.go
+    types.go
 
-  Expected behavior:
+  queue/
+    message.go
 
-  - StartApprovedPaymentProcessing
-      - Validate paymentID is not empty.
-      - Call repository method that owns the atomic transition and sender debit.
-      - Reload the payment from the repository and return current state.
-      - If repository returns an error, wrap and return it.
-      - If sender has insufficient balance, repository marks payment failed with error_code = "insufficient_funds"; service returns the reloaded failed payment.
+  external/
+    fraud_checker.go
 
-  - CompleteProcessedPayment
-      - Validate paymentID is not empty.
-      - Call repository method that owns the atomic receiver credit and completion.
-      - Reload the payment from the repository and return current state.
-      - If repository returns an error, wrap and return it.
+cmd/
+  worker/
+    main.go
+```
 
-  - FailProcessedPayment
-      - Validate paymentID is not empty.
-      - Validate errorCode is an allowed processor failure code.
-      - Call repository method that owns the atomic refund and failure transition.
-      - Reload the payment from the repository and return current state.
-      - If repository returns an error, wrap and return it.
-      - If payment is already failed, do not overwrite the existing error_code.
+Keep the first version simple. RabbitMQ wiring can be added after the worker behavior is tested with fakes.
 
-  Keep UpdatePaymentStatus only for simple non-money transitions for now, such as future fraud rejection pending -> rejected. Do not expose it through HTTP.
+## Message Shape
 
-  ## Interface Boundaries
+Use small, stable messages:
 
-  Keep interfaces small and define them near the consumer.
+```json
+{
+  "payment_id": "uuid",
+  "attempt": 1,
+  "correlation_id": "uuid-or-string"
+}
+```
 
-  Service package:
+Do not put the full payment object in the queue.
 
-  - PaymentService depends on a paymentRepository interface.
-  - This interface can include repository methods needed by payment service use cases.
-  - It is okay for this interface to grow with worker-facing payment operations because the service owns those use cases.
+Why: queue messages can be delayed or redelivered. The payment row in Postgres is the current truth.
 
-  Handler package:
+## Interfaces
 
-  - HTTP handlers should depend on a handler-local service interface, not directly on repository behavior.
-  - The handler-local interface should include only methods the handler calls, such as CreatePayment and future GetPayment.
-  - Handler tests should fake the service directly.
-  - Handler tests should not need to know about StartApprovedPaymentProcessing, CompleteProcessedPayment, or FailProcessedPayment.
+Define interfaces near the worker package:
 
-  Why: worker-only service methods should not leak into HTTP handler tests. The handler is responsible for HTTP decoding, validation, service call, error mapping, and response encoding. It should not care how the service talks to the database.
+```go
+type paymentService interface {
+    FindPaymentByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error) // add only if needed
+    RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) error
+    StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+}
 
-  ## Repository Practices
+type fraudChecker interface {
+    Check(ctx context.Context, payment *domain.Payment) (FraudDecision, error)
+}
+```
 
-  Implement each money-moving repository method as one database transaction.
+You may need to add a service method to load a payment by ID.
 
-  Apply these practices:
+Why: the worker should inspect current DB state before doing work. The queue message only tells it which payment to process.
 
-  - Use SELECT ... FOR UPDATE on the payment row before deciding state.
-  - Lock the account row before balance mutation.
-  - Keep lock order consistent: payment first, then account.
-  - Update account balance and insert ledger entry in the same transaction.
-  - Do not call external fraud/processor services inside a DB transaction.
-  - Treat duplicate or terminal-state messages as idempotent no-ops.
-  - Rely on both status checks and the existing unique ledger constraint for duplicate protection.
-  - Return safe domain/repository errors such as payment not found, account not found, invalid transition.
+## Fraud Decision
 
-  Repository method behavior:
+Keep fraud results explicit:
 
-  - StartApprovedPaymentProcessing
-      - If payment is pending: lock payment, lock sender account, check balance, debit sender, insert debit ledger, set status processing.
-      - If payment is already processing: return it without debiting again.
-      - If payment is terminal: return it as a no-op.
-      - If sender has insufficient balance: mark payment failed with error_code = "insufficient_funds", do not write ledger, do not debit.
+```txt
+approved
+rejected
+```
 
-  - CompleteProcessedPayment
-      - Only money-moves from processing.
-      - Lock payment, lock receiver account, credit receiver, insert credit ledger, set status completed.
-      - If already completed: no-op.
-      - If failed or rejected: no-op, never credit.
-      - If still pending: return invalid transition.
+Avoid boolean-only naming like `true/false` because it becomes unclear whether `true` means safe, risky, allowed, or blocked.
 
-  - FailProcessedPayment
-      - Only refunds from processing.
-      - Lock payment, lock sender account, credit sender, insert refund ledger, set status failed with the provided processor error code.
-      - If already failed: no-op and keep the existing error_code.
-      - If completed or rejected: no-op, never refund.
-      - If still pending: return invalid transition.
+For now, the fake fraud checker can be deterministic:
 
-  Why: queue workers are at-least-once. A redelivered message must be safe even if the previous attempt committed right before crashing.
+```txt
+amount over threshold -> rejected
+otherwise -> approved
+```
 
-  ## Test Plan
+Do not use randomness in tests.
 
-  Add service unit tests with fake repositories.
+## Worker Flow
 
-  Cover:
+For each message:
 
-  - StartApprovedPaymentProcessing
-      - rejects empty paymentID
-      - calls repository method
-      - reloads and returns current payment
-      - returns current payment for idempotent no-op statuses
-      - wraps repository errors
-      - wraps reload errors
+1. Decode and validate message.
+2. Load payment from DB by `payment_id`.
+3. If payment is not `pending`, treat message as stale/duplicate and ack.
+4. Run fraud checker.
+5. If fraud rejected, call `RejectPendingPayment`.
+6. If fraud approved, call `StartApprovedPaymentProcessing`.
+7. Ack only after the service call succeeds.
 
-  - CompleteProcessedPayment
-      - rejects empty paymentID
-      - calls repository method
-      - reloads and returns current payment
-      - returns current payment for idempotent no-op statuses
-      - wraps repository errors
-      - wraps reload errors
+Pseudo-flow:
 
-  - FailProcessedPayment
-      - rejects empty paymentID
-      - rejects empty or unsupported errorCode
-      - calls repository method with the provided errorCode
-      - reloads and returns current payment
-      - returns current payment for idempotent no-op statuses
-      - wraps repository errors
-      - wraps reload errors
+```txt
+message received
+  -> validate payment_id
+  -> load current payment
+  -> if status != pending: ack/no-op
+  -> fraud check
+  -> rejected: RejectPendingPayment
+  -> approved: StartApprovedPaymentProcessing
+  -> ack
+```
 
-  Add handler unit tests with fake service, not fake repository.
+Why: this keeps external fraud work outside database transactions, while the service/repository still owns the atomic state change.
 
-  Cover:
+## Status Handling
 
-  - handler decodes JSON correctly
-  - handler validates request shape
-  - handler maps service errors to HTTP status codes
-  - handler response does not expose internal errors
+Worker behavior by current payment status:
 
-  Add repository integration tests with real Postgres if possible, because fakes cannot prove transaction/locking/constraint behavior.
+```txt
+pending     -> run fraud check
+processing  -> no-op, ack
+completed   -> no-op, ack
+failed      -> no-op, ack
+rejected    -> no-op, ack
+```
 
-  Cover:
+Pattern: **stale message guard**.
 
-  - Start processing succeeds:
-      - pending payment becomes processing
-      - sender balance decreases once
-      - one debit ledger row is inserted
+If a message is redelivered after another worker already processed it, the current DB status decides whether the message is still relevant.
 
-  - Start processing duplicate:
-      - second call does not debit again
-      - no second debit ledger row
+## Error Handling
 
-  - Insufficient funds:
-      - payment becomes failed
-      - payment error_code is insufficient_funds
-      - sender balance unchanged
-      - no debit ledger row
+Classify errors simply:
 
-  - Complete succeeds:
-      - processing payment becomes completed
-      - receiver balance increases once
-      - one credit ledger row is inserted
+```txt
+invalid message       -> log and ack or send to DLQ
+payment not found     -> log and ack or DLQ, depending on desired strictness
+fraud checker error   -> retry/nack
+service repo error    -> retry/nack
+context canceled      -> stop/return
+```
 
-  - Complete duplicate:
-      - no double credit
+For the take-home, a reasonable first version:
 
-  - Fail succeeds:
-      - processing payment becomes failed
-      - payment error_code is the processor failure code
-      - sender is refunded once
-      - one refund ledger row is inserted
+- invalid JSON / invalid UUID: log and ack
+- payment not found: log and ack
+- fraud checker error: return error so caller can retry
+- service error: return error so caller can retry
 
-  - Fail duplicate:
-      - no double refund
-      - existing error_code is not overwritten
+Why: malformed messages will not become valid by retrying. Temporary infrastructure errors might.
 
-  - Invalid/terminal transitions:
-      - pending cannot complete directly
-      - pending cannot fail through FailProcessedPayment
-      - completed cannot fail
-      - rejected cannot process
-      - terminal states stay terminal
+## Ack/Nack Rule
 
-  - Optional but strong:
-      - two concurrent StartApprovedPaymentProcessing calls for the same payment result in one debit only.
+Ack only after the database state change succeeds.
 
-  ## Assumptions
+```txt
+fraud rejected + RejectPendingPayment success -> ack
+fraud approved + StartApprovedPaymentProcessing success -> ack
+service error -> do not ack
+```
 
-  - Amounts remain int64 minor units.
-  - Fraud rejection happens before sender debit, so fraud rejection does not need a refund.
-  - Insufficient funds is handled by StartApprovedPaymentProcessing because it happens before processing starts.
-  - Processor failures are handled by FailProcessedPayment because they happen after processing starts.
-  - The future worker will call the external payment processor only after StartApprovedPaymentProcessing returns a payment with status processing.
-  - The future worker will call CompleteProcessedPayment only after processor success, and FailProcessedPayment only after final processor failure.
-  - Queue ack/retry behavior is out of scope for this step, but these methods are designed so duplicate/redelivered messages are safe.
+Why: if the worker crashes after the DB commit but before ack, redelivery is safe because the service/repo methods are idempotent.
+
+## Logging
+
+Use `slog` with stable fields:
+
+```txt
+worker
+payment_id
+correlation_id
+attempt
+decision
+status
+error
+duration_ms
+```
+
+Keep logs useful but not noisy. Log one meaningful line per processed message outcome.
+
+Do not log secrets or full raw messages.
+
+## Tests
+
+Start with worker unit tests using fake service and fake fraud checker.
+
+Cover:
+
+- invalid payment ID is handled without calling fraud checker
+- missing payment returns/handles error according to your chosen policy
+- non-pending payment is no-op and does not call fraud checker
+- pending + fraud approved calls `StartApprovedPaymentProcessing`
+- pending + fraud rejected calls `RejectPendingPayment`
+- fraud checker error is returned for retry
+- service error is returned for retry
+- duplicate delivery is safe because non-pending status no-ops
+
+Do not mock RabbitMQ first. Test the worker behavior around a plain message struct.
+
+Pattern:
+
+```txt
+worker unit tests -> fake service + fake fraud checker
+queue integration -> later
+repository integration -> already covers money invariants
+```
+
+## Implementation Order
+
+1. Add message type and validation.
+2. Add service method to find payment by ID, if the worker needs it.
+3. Add fraud checker interface and deterministic fake implementation.
+4. Add fraud worker with a `HandleMessage(ctx, msg)` method.
+5. Unit test `HandleMessage`.
+6. Add RabbitMQ consumer wrapper after the worker behavior is correct.
+7. Add `cmd/worker` wiring last.
+
+Why this order: build the business behavior before transport wiring. RabbitMQ should deliver messages, not define your core worker logic.
+
+## Out of Scope For This Step
+
+Do not build these yet unless needed:
+
+- payment processor worker
+- notification worker
+- complex retry backoff
+- DLQ management UI
+- metrics dashboards
+- outbox pattern
+
+Keep this slice focused: fraud decision -> payment state transition.
+
+## Definition Of Done
+
+This slice is done when:
+
+- a pending payment message can be handled by the fraud worker
+- approved fraud result starts processing and debits sender through the existing service/repo path
+- rejected fraud result rejects the pending payment
+- duplicate/stale messages are safe no-ops
+- worker behavior is covered by unit tests
+- message handling logs useful fields
+- README or notes explain the fraud worker flow and idempotency behavior
