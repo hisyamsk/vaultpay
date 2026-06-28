@@ -306,7 +306,7 @@ func TestCreatePaymentWrapsFindByIdempotencyKeyErrors(t *testing.T) {
 	}
 }
 
-func TestUpdatePaymentStatusUpdatesValidTransition(t *testing.T) {
+func TestRejectPendingPaymentRejectsPendingPayment(t *testing.T) {
 	paymentID := uuid.New()
 
 	svc := NewPaymentService(fakePaymentRepository{
@@ -323,19 +323,19 @@ func TestUpdatePaymentStatusUpdatesValidTransition(t *testing.T) {
 			if fromStatus != domain.PaymentStatusPending {
 				t.Fatalf("expected from status %s, got %s", domain.PaymentStatusPending, fromStatus)
 			}
-			if toStatus != domain.PaymentStatusProcessing {
-				t.Fatalf("expected to status %s, got %s", domain.PaymentStatusProcessing, toStatus)
+			if toStatus != domain.PaymentStatusRejected {
+				t.Fatalf("expected to status %s, got %s", domain.PaymentStatusRejected, toStatus)
 			}
 			return nil
 		},
 	})
 
-	if err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusProcessing); err != nil {
+	if err := svc.RejectPendingPayment(context.Background(), paymentID); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
-func TestUpdatePaymentStatusRejectsInvalidTransition(t *testing.T) {
+func TestRejectPendingPaymentRejectsNonPendingPayment(t *testing.T) {
 	paymentID := uuid.New()
 	calledUpdate := false
 
@@ -349,7 +349,7 @@ func TestUpdatePaymentStatusRejectsInvalidTransition(t *testing.T) {
 		},
 	})
 
-	err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusFailed)
+	err := svc.RejectPendingPayment(context.Background(), paymentID)
 	if !errors.Is(err, ErrInvalidPaymentStatusTransition) {
 		t.Fatalf("expected error %v, got %v", ErrInvalidPaymentStatusTransition, err)
 	}
@@ -358,7 +358,7 @@ func TestUpdatePaymentStatusRejectsInvalidTransition(t *testing.T) {
 	}
 }
 
-func TestUpdatePaymentStatusWrapsFindByIDErrors(t *testing.T) {
+func TestRejectPendingPaymentWrapsFindByIDErrors(t *testing.T) {
 	paymentID := uuid.New()
 	findErr := errors.New("lookup failed")
 
@@ -368,13 +368,13 @@ func TestUpdatePaymentStatusWrapsFindByIDErrors(t *testing.T) {
 		},
 	})
 
-	err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusProcessing)
+	err := svc.RejectPendingPayment(context.Background(), paymentID)
 	if !errors.Is(err, findErr) {
 		t.Fatalf("expected error to wrap %v, got %v", findErr, err)
 	}
 }
 
-func TestUpdatePaymentStatusWrapsUpdateStatusErrors(t *testing.T) {
+func TestRejectPendingPaymentWrapsUpdateStatusErrors(t *testing.T) {
 	paymentID := uuid.New()
 	updateErr := errors.New("update failed")
 
@@ -387,7 +387,7 @@ func TestUpdatePaymentStatusWrapsUpdateStatusErrors(t *testing.T) {
 		},
 	})
 
-	err := svc.UpdatePaymentStatus(context.Background(), paymentID, domain.PaymentStatusProcessing)
+	err := svc.RejectPendingPayment(context.Background(), paymentID)
 	if !errors.Is(err, updateErr) {
 		t.Fatalf("expected error to wrap %v, got %v", updateErr, err)
 	}

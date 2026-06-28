@@ -65,7 +65,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 
 }
 
-func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID uuid.UUID, nextStatus domain.PaymentStatus) error {
+func (s *PaymentService) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) error {
 	if paymentID == uuid.Nil {
 		return ErrInvalidPaymentID
 	}
@@ -75,12 +75,12 @@ func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID uuid
 		return fmt.Errorf("find payment by id: %w", err)
 	}
 
-	if !payment.Status.CanTransitionTo(nextStatus) {
+	if payment.Status != domain.PaymentStatusPending {
 		return ErrInvalidPaymentStatusTransition
 	}
 
-	if err := s.repo.UpdateStatus(ctx, paymentID, payment.Status, nextStatus); err != nil {
-		return fmt.Errorf("update payment status: %w", err)
+	if err := s.repo.UpdateStatus(ctx, paymentID, domain.PaymentStatusPending, domain.PaymentStatusRejected); err != nil {
+		return fmt.Errorf("reject pending payment: %w", err)
 	}
 
 	return nil
