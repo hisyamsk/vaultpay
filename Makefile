@@ -26,10 +26,10 @@ compose-logs:
 	docker compose logs -f api
 
 compose-dev-up:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+	docker compose -f docker-compose.dev.yml up -d
 
 compose-dev-down:
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+	docker compose -f docker-compose.dev.yml down
 
 migrate-up:
 	migrate -database "$(DATABASE_URL)" -path db/migrations up
