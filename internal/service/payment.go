@@ -66,6 +66,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 }
 
 func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID uuid.UUID, nextStatus domain.PaymentStatus) error {
+	if paymentID == uuid.Nil {
+		return ErrInvalidPaymentID
+	}
+
 	payment, err := s.repo.FindById(ctx, paymentID)
 	if err != nil {
 		return fmt.Errorf("find payment by id: %w", err)
@@ -80,4 +84,17 @@ func (s *PaymentService) UpdatePaymentStatus(ctx context.Context, paymentID uuid
 	}
 
 	return nil
+}
+
+func (s *PaymentService) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+	if paymentID == uuid.Nil {
+		return nil, ErrInvalidPaymentID
+	}
+
+	payment, err := s.repo.StartApprovedPaymentProcessing(ctx, paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("start approved payment processing: %w", err)
+	}
+
+	return payment, nil
 }
