@@ -28,6 +28,7 @@ var (
 	ErrIdempotencyKeyConflict         = errors.New("idempotency key conflict")
 	ErrInvalidPaymentStatusTransition = errors.New("invalid payment status transition")
 	ErrInvalidPaymentID               = errors.New("invalid payment id")
+	ErrInvalidPaymentFailureCode      = errors.New("invalid payment failure code")
 )
 
 type CreatePaymentRequest struct {

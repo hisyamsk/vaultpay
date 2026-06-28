@@ -98,3 +98,34 @@ func (s *PaymentService) StartApprovedPaymentProcessing(ctx context.Context, pay
 
 	return payment, nil
 }
+
+func (s *PaymentService) CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+	if paymentID == uuid.Nil {
+		return nil, ErrInvalidPaymentID
+	}
+
+	payment, err := s.repo.CompleteProcessedPayment(ctx, paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("complete processed payment: %w", err)
+	}
+
+	return payment, nil
+}
+
+func (s *PaymentService) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error) {
+	if paymentID == uuid.Nil {
+		return nil, ErrInvalidPaymentID
+	}
+
+	errorCode = strings.TrimSpace(errorCode)
+	if errorCode == "" {
+		return nil, ErrInvalidPaymentFailureCode
+	}
+
+	payment, err := s.repo.FailProcessedPayment(ctx, paymentID, errorCode)
+	if err != nil {
+		return nil, fmt.Errorf("fail processed payment: %w", err)
+	}
+
+	return payment, nil
+}
