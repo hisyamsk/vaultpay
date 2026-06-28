@@ -14,9 +14,9 @@ type paymentRepository interface {
 	FindByIdempotencyKey(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
 	FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error
-	StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error)
-	CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error)
-	FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (domain.PaymentStatus, error)
+	StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+	CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+	FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error)
 }
 
 var (

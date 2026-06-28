@@ -92,34 +92,43 @@ func (r *PaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, from
 	return nil
 }
 
-func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error) {
+func scanPayment(row pgx.Row) (*domain.Payment, error) {
+	payment := &domain.Payment{}
+	err := row.Scan(
+		&payment.ID, &payment.Amount, &payment.SenderID, &payment.ReceiverID, &payment.IdempotencyKey, &payment.Status,
+		&payment.ErrorCode, &payment.Description, &payment.CreatedAt, &payment.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return payment, nil
+}
+
+func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	var status domain.PaymentStatus
-	var senderID uuid.UUID
-	var amount int64
-
-	err = tx.QueryRow(ctx, `
-		SELECT status, sender_id, amount
+	payment, err := scanPayment(tx.QueryRow(ctx, `
+		SELECT id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
 		FROM payments
 		WHERE id = $1
 		FOR UPDATE
-	`, paymentID).Scan(&status, &senderID, &amount)
+	`, paymentID))
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrPaymentNotFound
+			return nil, ErrPaymentNotFound
 		}
-		return "", err
+		return nil, err
 	}
 
-	switch status {
+	switch payment.Status {
 	case domain.PaymentStatusProcessing, domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
-		return status, nil
+		return payment, nil
 	case domain.PaymentStatusPending:
 		var balance int64
 		err = tx.QueryRow(ctx, `
@@ -127,12 +136,12 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 			FROM accounts
 			WHERE id = $1 
 			FOR UPDATE
-		`, senderID).Scan(&balance)
+		`, payment.SenderID).Scan(&balance)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return "", ErrAccountNotFound
+				return nil, ErrAccountNotFound
 			}
-			return "", err
+			return nil, err
 		}
 
 		err = tx.QueryRow(ctx, `
@@ -140,80 +149,84 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 			SET balance = balance - $1, updated_at = NOW()
 			WHERE id = $2 AND balance >= $1
 			RETURNING balance
-		`, amount, senderID).Scan(&balance)
+		`, payment.Amount, payment.SenderID).Scan(&balance)
 
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				_, err = tx.Exec(ctx, `
+				payment, err = scanPayment(tx.QueryRow(ctx, `
 					UPDATE payments
 					SET status = $1, error_code = $2, updated_at = NOW()
 					WHERE id = $3
-					`, domain.PaymentStatusFailed, domain.ErrorCodeInsufficientFunds, paymentID)
+					RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+				`, domain.PaymentStatusFailed, domain.ErrorCodeInsufficientFunds, paymentID))
 
 				if err != nil {
-					return "", err
+					return nil, err
 				}
 
-				return domain.PaymentStatusFailed, tx.Commit(ctx)
+				if err := tx.Commit(ctx); err != nil {
+					return nil, err
+				}
+				return payment, nil
 			}
-			return "", err
+			return nil, err
 		}
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO ledger_entries(payment_id, account_id, type, amount)
 			VALUES($1, $2, $3, $4)
-		`, paymentID, senderID, domain.LedgerEntryTypeDebit, amount)
+		`, paymentID, payment.SenderID, domain.LedgerEntryTypeDebit, payment.Amount)
 
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		_, err = tx.Exec(ctx, `
+		payment, err = scanPayment(tx.QueryRow(ctx, `
 			UPDATE payments
 			SET status = $1, updated_at = NOW()
 			WHERE id = $2
-		`, domain.PaymentStatusProcessing, paymentID)
+			RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+		`, domain.PaymentStatusProcessing, paymentID))
 
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		return domain.PaymentStatusProcessing, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return payment, nil
 	}
 
-	return "", ErrUnrecognizedPaymentStatus
+	return nil, ErrUnrecognizedPaymentStatus
 }
 
-func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error) {
+func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	var status domain.PaymentStatus
-	var receiverID uuid.UUID
-	var amount int64
-
-	err = tx.QueryRow(ctx, `
-		SELECT status, receiver_id, amount
+	payment, err := scanPayment(tx.QueryRow(ctx, `
+		SELECT id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
 		FROM payments
 		WHERE id = $1
 		FOR UPDATE
-	`, paymentID).Scan(&status, &receiverID, &amount)
+	`, paymentID))
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrPaymentNotFound
+			return nil, ErrPaymentNotFound
 		}
-		return "", err
+		return nil, err
 	}
 
-	switch status {
+	switch payment.Status {
 	case domain.PaymentStatusPending:
-		return "", ErrInvalidStatusTransition
+		return nil, ErrInvalidStatusTransition
 	case domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
-		return status, nil
+		return payment, nil
 	case domain.PaymentStatusProcessing:
 		var balance int64
 		err = tx.QueryRow(ctx, `
@@ -221,69 +234,69 @@ func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymen
 			SET balance = balance + $1, updated_at = NOW()
 			WHERE id = $2
 			RETURNING balance
-		`, amount, receiverID).Scan(&balance)
+		`, payment.Amount, payment.ReceiverID).Scan(&balance)
 
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return "", ErrAccountNotFound
+				return nil, ErrAccountNotFound
 			}
-			return "", err
+			return nil, err
 		}
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO ledger_entries(payment_id, account_id, type, amount)
 			VALUES($1, $2, $3, $4)
-		`, paymentID, receiverID, domain.LedgerEntryTypeCredit, amount)
+		`, paymentID, payment.ReceiverID, domain.LedgerEntryTypeCredit, payment.Amount)
 
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		_, err = tx.Exec(ctx, `
+		payment, err = scanPayment(tx.QueryRow(ctx, `
 			UPDATE payments
 			SET status = $1, updated_at = NOW()
 			WHERE id = $2
-		`, domain.PaymentStatusCompleted, paymentID)
+			RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+		`, domain.PaymentStatusCompleted, paymentID))
 
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		return domain.PaymentStatusCompleted, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return payment, nil
 	}
 
-	return "", ErrUnrecognizedPaymentStatus
+	return nil, ErrUnrecognizedPaymentStatus
 }
 
-func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (domain.PaymentStatus, error) {
+func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	var status domain.PaymentStatus
-	var senderID uuid.UUID
-	var amount int64
-
-	err = tx.QueryRow(ctx, `
-		SELECT status, sender_id, amount
+	payment, err := scanPayment(tx.QueryRow(ctx, `
+		SELECT id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
 		FROM payments
 		WHERE id = $1
 		FOR UPDATE
-	`, paymentID).Scan(&status, &senderID, &amount)
+	`, paymentID))
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrPaymentNotFound
+			return nil, ErrPaymentNotFound
 		}
 
-		return "", err
+		return nil, err
 	}
 
-	switch status {
+	switch payment.Status {
 	case domain.PaymentStatusPending, domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
-		return status, nil
+		return payment, nil
 	case domain.PaymentStatusProcessing:
 		var balance int64
 		err = tx.QueryRow(ctx, `
@@ -291,37 +304,41 @@ func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID 
 			SET balance = balance + $1, updated_at = NOW()
 			WHERE id = $2
 			RETURNING balance
-		`, amount, senderID).Scan(&balance)
+		`, payment.Amount, payment.SenderID).Scan(&balance)
 
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return "", ErrAccountNotFound
+				return nil, ErrAccountNotFound
 			}
 
-			return "", err
+			return nil, err
 		}
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO ledger_entries(payment_id, account_id, type, amount)
 			VALUES($1, $2, $3, $4)
-		`, paymentID, senderID, domain.LedgerEntryTypeRefund, amount)
+		`, paymentID, payment.SenderID, domain.LedgerEntryTypeRefund, payment.Amount)
 
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		_, err = tx.Exec(ctx, `
+		payment, err = scanPayment(tx.QueryRow(ctx, `
 			UPDATE payments
 			SET status = $1, error_code = $2, updated_at = NOW()
 			WHERE id = $3
-		`, domain.PaymentStatusFailed, errorCode, paymentID)
+			RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
+		`, domain.PaymentStatusFailed, errorCode, paymentID))
 
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
-		return domain.PaymentStatusFailed, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return payment, nil
 	}
 
-	return "", ErrUnrecognizedPaymentStatus
+	return nil, ErrUnrecognizedPaymentStatus
 }

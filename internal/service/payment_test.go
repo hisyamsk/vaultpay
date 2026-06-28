@@ -15,9 +15,9 @@ type fakePaymentRepository struct {
 	findFn                           func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
 	findByIDFn                       func(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	updateStatusFn                   func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error
-	startApprovedPaymentProcessingFn func(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error)
-	completeProcessedPaymentFn       func(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error)
-	failProcessedPaymentFn           func(ctx context.Context, paymentID uuid.UUID, errorCode string) (domain.PaymentStatus, error)
+	startApprovedPaymentProcessingFn func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+	completeProcessedPaymentFn       func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+	failProcessedPaymentFn           func(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error)
 }
 
 func (f fakePaymentRepository) Create(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error) {
@@ -48,23 +48,23 @@ func (f fakePaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, f
 	return f.updateStatusFn(ctx, id, fromStatus, toStatus)
 }
 
-func (f fakePaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error) {
+func (f fakePaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 	if f.startApprovedPaymentProcessingFn == nil {
-		return "", errors.New("unexpected start approved payment processing call")
+		return nil, errors.New("unexpected start approved payment processing call")
 	}
 	return f.startApprovedPaymentProcessingFn(ctx, paymentID)
 }
 
-func (f fakePaymentRepository) CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (domain.PaymentStatus, error) {
+func (f fakePaymentRepository) CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 	if f.completeProcessedPaymentFn == nil {
-		return "", errors.New("unexpected complete processed payment call")
+		return nil, errors.New("unexpected complete processed payment call")
 	}
 	return f.completeProcessedPaymentFn(ctx, paymentID)
 }
 
-func (f fakePaymentRepository) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (domain.PaymentStatus, error) {
+func (f fakePaymentRepository) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error) {
 	if f.failProcessedPaymentFn == nil {
-		return "", errors.New("unexpected fail processed payment call")
+		return nil, errors.New("unexpected fail processed payment call")
 	}
 	return f.failProcessedPaymentFn(ctx, paymentID, errorCode)
 }
