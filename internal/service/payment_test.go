@@ -394,6 +394,53 @@ func TestRejectPendingPaymentWrapsUpdateStatusErrors(t *testing.T) {
 	}
 }
 
+func TestFindPaymentById(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects empty payment id", func(t *testing.T) {
+		svc := NewPaymentService(fakePaymentRepository{})
+
+		payment, err := svc.FindPaymentById(ctx, uuid.Nil)
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, ErrInvalidPaymentID)
+	})
+
+	t.Run("returns repository payment", func(t *testing.T) {
+		paymentID := uuid.New()
+		expected := &domain.Payment{
+			ID:     paymentID,
+			Status: domain.PaymentStatusPending,
+		}
+		svc := NewPaymentService(fakePaymentRepository{
+			findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				require.Equal(t, paymentID, id)
+				return expected, nil
+			},
+		})
+
+		payment, err := svc.FindPaymentById(ctx, paymentID)
+
+		require.NoError(t, err)
+		require.Same(t, expected, payment)
+	})
+
+	t.Run("wraps repository errors", func(t *testing.T) {
+		paymentID := uuid.New()
+		repoErr := repository.ErrPaymentNotFound
+		svc := NewPaymentService(fakePaymentRepository{
+			findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+				return nil, repoErr
+			},
+		})
+
+		payment, err := svc.FindPaymentById(ctx, paymentID)
+
+		require.Nil(t, payment)
+		require.ErrorIs(t, err, repoErr)
+	})
+}
+
 func TestStartApprovedPaymentProcessing(t *testing.T) {
 	ctx := context.Background()
 

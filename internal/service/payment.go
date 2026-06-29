@@ -129,3 +129,16 @@ func (s *PaymentService) FailProcessedPayment(ctx context.Context, paymentID uui
 
 	return payment, nil
 }
+
+func (s *PaymentService) FindPaymentById(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+	if paymentID == uuid.Nil {
+		return nil, ErrInvalidPaymentID
+	}
+
+	payment, err := s.repo.FindById(ctx, paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("find payment by id: %w", err)
+	}
+
+	return payment, nil
+}
