@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TYPE payment_status AS ENUM (
     'pending',
     'processing',
@@ -15,14 +13,14 @@ CREATE TYPE ledger_entry_type AS ENUM (
 );
 
 CREATE TABLE accounts (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id UUID DEFAULT uuidv7() PRIMARY KEY,
     balance BIGINT NOT NULL CHECK (balance >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE payments (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id UUID DEFAULT uuidv7() PRIMARY KEY,
     amount BIGINT NOT NULL CHECK (amount > 0),
     sender_id UUID NOT NULL REFERENCES accounts(id),
     receiver_id UUID NOT NULL REFERENCES accounts(id),
@@ -38,7 +36,7 @@ CREATE TABLE payments (
 );
 
 CREATE TABLE ledger_entries (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     payment_id UUID NOT NULL REFERENCES payments(id),
     account_id UUID NOT NULL REFERENCES accounts(id),
     type ledger_entry_type NOT NULL,
@@ -49,7 +47,7 @@ CREATE TABLE ledger_entries (
 );
 
 CREATE TABLE payment_events (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     payment_id UUID NOT NULL REFERENCES payments(id),
     event_type VARCHAR(100) NOT NULL,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
