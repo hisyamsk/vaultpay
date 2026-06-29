@@ -262,6 +262,8 @@ Important tests:
 
 Use deterministic fakes for fraud checker and payment processor. Do not depend on randomness in tests.
 
+When adding tests, focus on important behavior and edge cases that protect correctness. Avoid noisy or too-obvious tests. If a test exposes a missing or broken implementation, let it fail instead of weakening the assertion.
+
 ---
 
 ## Observability Expectations
