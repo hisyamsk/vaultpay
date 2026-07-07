@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"errors"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
@@ -11,6 +11,7 @@ import (
 type FraudWorker struct {
 	paymentService paymentService
 	fraudChecker   fraudChecker
+	logger         *slog.Logger
 }
 
 type FraudDecision string
@@ -21,7 +22,7 @@ const (
 )
 
 type paymentService interface {
-	FindPaymentByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error) // add only if needed
+	FindPaymentByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) error
 	StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 }
@@ -29,5 +30,3 @@ type paymentService interface {
 type fraudChecker interface {
 	Check(ctx context.Context, payment *domain.Payment) (FraudDecision, error)
 }
-
-var ErrInvalidPaymentID = errors.New("invalid payment id")

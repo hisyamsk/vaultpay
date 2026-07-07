@@ -27,8 +27,9 @@ When helping:
 * Help me build intuition, not just finish tasks.
 * If my approach is flawed, say so directly and explain why.
 * Avoid overengineering.
-* Don't hesitate to suggest refactoring if it's necessary and benefits readability and cleanliness
+* Suggest refactoring if it's necessary and benefits readability and cleanliness in long term
 * Keep the implementation suitable for a 2–3 day take-home project.
+* Always refer to proven industry standard practice implementation.
 
 ---
 
