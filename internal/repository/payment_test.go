@@ -127,7 +127,7 @@ func TestPaymentRepository_CreateFindAndUpdateStatus(t *testing.T) {
 	require.Equal(t, int64(500), payment.Amount)
 	require.Equal(t, domain.PaymentStatusPending, payment.Status)
 
-	found, err := repo.FindById(ctx, payment.ID)
+	found, err := repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.Equal(t, payment.ID, found.ID)
 	require.Equal(t, domain.PaymentStatusPending, found.Status)
@@ -135,7 +135,7 @@ func TestPaymentRepository_CreateFindAndUpdateStatus(t *testing.T) {
 	err = repo.UpdateStatus(ctx, payment.ID, domain.PaymentStatusPending, domain.PaymentStatusProcessing)
 	require.NoError(t, err)
 
-	updated, err := repo.FindById(ctx, payment.ID)
+	updated, err := repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PaymentStatusProcessing, updated.Status)
 }
@@ -152,7 +152,7 @@ func TestPaymentRepository_CreateAndFindEdges(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "idem-duplicate", found.IdempotencyKey)
 
-	_, err = repo.FindById(ctx, uuid.New())
+	_, err = repo.FindByID(ctx, uuid.New())
 	require.ErrorIs(t, err, ErrPaymentNotFound)
 
 	_, err = repo.FindByIdempotencyKey(ctx, "missing-idempotency-key")
@@ -177,7 +177,7 @@ func TestPaymentRepository_UpdateStatusConflict(t *testing.T) {
 	err := repo.UpdateStatus(ctx, payment.ID, domain.PaymentStatusProcessing, domain.PaymentStatusCompleted)
 	require.ErrorIs(t, err, ErrPaymentStatusConflict)
 
-	unchanged, err := repo.FindById(ctx, payment.ID)
+	unchanged, err := repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PaymentStatusPending, unchanged.Status)
 }
@@ -215,7 +215,7 @@ func TestPaymentRepository_StartApprovedPaymentProcessing_InsufficientFundsFails
 	require.Equal(t, int64(300), accountBalance(t, ctx, repo.db, senderID))
 	require.Equal(t, 0, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
 
-	failed, err = repo.FindById(ctx, payment.ID)
+	failed, err = repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PaymentStatusFailed, failed.Status)
 	require.NotNil(t, failed.ErrorCode)
@@ -256,7 +256,7 @@ func TestPaymentRepository_CompleteProcessedPayment_RejectsPendingPayment(t *tes
 	require.ErrorIs(t, err, ErrInvalidStatusTransition)
 	require.Nil(t, completed)
 
-	unchanged, err := repo.FindById(ctx, payment.ID)
+	unchanged, err := repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PaymentStatusPending, unchanged.Status)
 	require.Equal(t, int64(1000), accountBalance(t, ctx, repo.db, receiverID))
@@ -286,7 +286,7 @@ func TestPaymentRepository_FailProcessedPayment_RefundsSenderOnce(t *testing.T) 
 	require.Equal(t, int64(2000), accountBalance(t, ctx, repo.db, senderID))
 	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeRefund))
 
-	failed, err = repo.FindById(ctx, payment.ID)
+	failed, err = repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.NotNil(t, failed.ErrorCode)
 	require.Equal(t, "processor_declined", *failed.ErrorCode)

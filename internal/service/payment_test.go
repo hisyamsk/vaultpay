@@ -35,7 +35,7 @@ func (f fakePaymentRepository) FindByIdempotencyKey(ctx context.Context, idempot
 	return f.findFn(ctx, idempotencyKey)
 }
 
-func (f fakePaymentRepository) FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+func (f fakePaymentRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
 	if f.findByIDFn == nil {
 		return nil, errors.New("unexpected find by id call")
 	}
@@ -394,13 +394,13 @@ func TestRejectPendingPaymentWrapsUpdateStatusErrors(t *testing.T) {
 	}
 }
 
-func TestFindPaymentById(t *testing.T) {
+func TestFindPaymentByID(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("rejects empty payment id", func(t *testing.T) {
 		svc := NewPaymentService(fakePaymentRepository{})
 
-		payment, err := svc.FindPaymentById(ctx, uuid.Nil)
+		payment, err := svc.FindPaymentByID(ctx, uuid.Nil)
 
 		require.Nil(t, payment)
 		require.ErrorIs(t, err, ErrInvalidPaymentID)
@@ -419,7 +419,7 @@ func TestFindPaymentById(t *testing.T) {
 			},
 		})
 
-		payment, err := svc.FindPaymentById(ctx, paymentID)
+		payment, err := svc.FindPaymentByID(ctx, paymentID)
 
 		require.NoError(t, err)
 		require.Same(t, expected, payment)
@@ -434,7 +434,7 @@ func TestFindPaymentById(t *testing.T) {
 			},
 		})
 
-		payment, err := svc.FindPaymentById(ctx, paymentID)
+		payment, err := svc.FindPaymentByID(ctx, paymentID)
 
 		require.Nil(t, payment)
 		require.ErrorIs(t, err, repoErr)

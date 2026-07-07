@@ -12,7 +12,7 @@ import (
 type paymentRepository interface {
 	Create(ctx context.Context, params repository.CreatePaymentParams) (*domain.Payment, error)
 	FindByIdempotencyKey(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
-	FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error
 	StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)

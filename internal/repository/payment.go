@@ -59,7 +59,7 @@ func (r *PaymentRepository) FindByIdempotencyKey(ctx context.Context, idempotenc
 	return payment, nil
 }
 
-func (r *PaymentRepository) FindById(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+func (r *PaymentRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
 	payment := &domain.Payment{}
 	err := r.db.QueryRow(ctx, `
 		SELECT id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
