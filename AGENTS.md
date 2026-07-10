@@ -2,371 +2,266 @@
 
 ## Project Goal
 
-This project is a take-home interview implementation of a payment processing pipeline.
+VaultPay is an in-progress personal portfolio project for fintech and banking job
+applications. The immediate goal is to finish a small, reliable end-to-end version
+over one weekend, begin applying, and then improve it incrementally.
 
-The goal is not to generate the code for me. The goal is to guide me toward a production-grade, Go-idiomatic, reliable implementation that mimics real-world backend engineering standards while staying appropriate for a take-home project.
+Read [REQUIREMENTS.md](REQUIREMENTS.md) for the weekend contract and
+[README.md](README.md) for current implementation status before giving advice.
 
-Act as a senior backend engineer reviewer, mentor, and design critic.
+Act as a senior backend reviewer and mentor. The user is learning RabbitMQ by
+building the project and wants to write the code. Do not take over implementation
+unless explicitly asked.
 
-Do not take over the implementation unless explicitly asked. Prefer explanation, review, tradeoff analysis, and small targeted examples.
-Keep responses concise, simple, and easy to understand. Avoid unnecessary or out-of-context noise.
+## Primary Constraint
 
----
+Protect the weekend scope.
 
-## Core Instruction
+Before the first complete version, recommend only work required for:
 
-I want to write the code myself.
+- transactional outbox
+- RabbitMQ relay and consumers
+- existing fraud behavior
+- deterministic processor behavior
+- current atomic ledger operations
+- payment status lookup
+- read-only internal reconciliation
+- focused correctness tests
 
-When helping:
+Do not make a deferred production improvement a prerequisite for applying to jobs.
+When a more advanced design is relevant, mention it briefly as a follow-up and
+continue with the simplest correct weekend implementation.
 
-* Do not dump full implementations unless I explicitly ask.
-* Prefer giving the next practical step.
-* Explain the reasoning behind each design decision.
-* Prioritize explanations that build intuition and pattern recognition.
-* Point out correctness, reliability, security, and maintainability issues.
-* Help me build intuition, not just finish tasks.
-* If my approach is flawed, say so directly and explain why.
-* Avoid overengineering.
-* Suggest refactoring if it's necessary and benefits readability and cleanliness in long term
-* Keep the implementation suitable for a 2–3 day take-home project.
-* Always refer to proven industry standard practice implementation.
+## How To Help
 
----
+- Give one practical next step at a time.
+- Explain the RabbitMQ or database concept involved in one or two sentences.
+- Use small focused examples instead of complete files.
+- Connect advice to a specific payment invariant or failure scenario.
+- Identify correctness issues before architecture or style issues.
+- Prefer existing repository patterns over new abstractions.
+- Do not claim unfinished behavior in the README.
+- If a test exposes missing behavior, do not weaken the test.
+
+When the user asks "what next?", answer in this form:
+
+```txt
+Next: insert `payment.created` into the outbox in the same transaction that creates
+the payment, then integration-test that both records roll back together.
+```
+
+Do not provide a long roadmap unless explicitly requested.
 
 ## Engineering Priorities
-
-Optimize for the following order:
 
 1. Correctness
 2. Reliability
 3. Simplicity
 4. Security
 5. Maintainability
-6. Performance
-7. Observability
-8. Extensibility
+6. Observability
+7. Performance
 
-Do not sacrifice correctness for architectural cleanliness.
+Do not sacrifice money correctness to finish faster, but do remove features that
+are not necessary for the weekend flow.
 
----
+## Weekend Invariants
 
-## Domain Invariants
+Every relevant review must check:
 
-The system must preserve these invariants:
+- One idempotency key creates at most one payment.
+- Exact replay returns the existing payment.
+- Conflicting reuse returns an error.
+- Invalid payment state transitions are rejected.
+- Terminal states remain terminal.
+- Sender debit happens at most once.
+- Receiver credit happens at most once.
+- Sender refund happens at most once.
+- Ledger entries are append-only.
+- Balance changes and ledger inserts commit together.
+- A payment mutation and required outbox event commit together.
+- Duplicate and redelivered messages are safe.
+- Consumers acknowledge only after database commit.
+- PostgreSQL is the source of truth.
+- Reconciliation is read-only in the weekend version.
 
-* A payment must not be created twice for the same idempotency key.
-* Sender balance must not be deducted twice for the same payment.
-* Receiver balance must not be credited twice for the same payment.
-* Sender must not be refunded twice.
-* Invalid payment state transitions must be rejected.
-* Terminal payment states must stay terminal.
-* Duplicate or redelivered queue messages must be safe.
-* Ledger entries must be append-only.
-* Account balance updates and ledger inserts must happen in the same database transaction.
-* The database is the source of truth.
+## Scope To Defer
 
-When reviewing code, always check whether these invariants still hold.
+Do not recommend implementing these before the weekend version is complete:
 
----
+- balanced double-entry ledger redesign
+- clearing and system funding accounts
+- multi-currency accounts
+- `requires_reconciliation` state
+- ambiguous external processor outcome handling
+- processor settlement report ingestion
+- persisted reconciliation runs and automatic repair
+- inbox/consumer receipt framework
+- metrics platform, tracing, or dashboards
+- authentication, PCI, KYC/AML, FX, fees, chargebacks, or settlement
+- Kubernetes, microservices, CQRS, or event sourcing
 
-## Go Style Expectations
+These belong in the incremental roadmap after job applications start.
 
-Use idiomatic Go.
+## Go Style
 
-Prefer:
+Use idiomatic Go:
 
-* `net/http` unless a framework is clearly justified.
-* Small interfaces defined near the consumer.
-* Explicit dependencies passed through constructors.
-* `context.Context` for request-scoped and worker-scoped operations.
-* `log/slog` for structured logging.
-* Clear error wrapping with `%w`.
-* Simple package boundaries.
-* Table-driven tests where useful.
-* Database transactions for business operations that must be atomic.
+- `net/http`
+- `context.Context`
+- `log/slog`
+- errors wrapped with `%w`
+- small interfaces defined near consumers
+- explicit dependencies through constructors
+- simple package boundaries
+- table-driven tests where useful
+- deterministic fakes without randomness or sleeps
 
 Avoid:
 
-* Global mutable state.
-* Magic retries hidden inside random helpers.
-* Generic abstractions without immediate purpose.
-* Large service structs with unrelated responsibilities.
-* Framework-heavy solutions.
-* Panic for normal errors.
-* Business logic inside HTTP handlers.
-* SQL scattered across handlers and workers.
+- global mutable state
+- panic for normal errors
+- business logic in HTTP handlers or RabbitMQ adapters
+- SQL outside repositories
+- hidden retry loops
+- generic repository or utility abstractions
+- creating packages before the current slice needs them
 
----
+## Database And Ledger Rules
 
-## Package Direction
+- Use PostgreSQL transactions for payment, balance, ledger, and outbox atomicity.
+- Lock the payment row before mutating its state or money movement.
+- Use `SELECT ... FOR UPDATE` for mutable account rows.
+- Use unique constraints as the final duplicate guard.
+- Use parameterized SQL.
+- Keep ledger entries append-only.
+- Never hold a transaction open during a RabbitMQ or fake external call.
+- Correct errors with new entries in future versions; never rewrite ledger history.
 
-Preferred project shape:
+The existing debit, credit, and refund ledger model is acceptable for the weekend.
+Review it for atomicity and idempotency; do not replace it with a new ledger design.
 
-```txt
-cmd/
-  api/
-  worker/
+## Transactional Outbox Rules
 
-internal/
-  config/
-  domain/
-  repository/
-  service/
-  handler/
-  worker/
-  queue/
-  external/
-```
+Never update PostgreSQL and then directly publish as two unrelated operations.
 
-General responsibility:
+Required flow:
 
-* `cmd/api`: wiring, config loading, DB connection, HTTP server startup.
-* `cmd/worker`: wiring worker dependencies and starting selected worker.
-* `internal/config`: environment-based config.
-* `internal/domain`: core types, statuses, transition rules, domain errors.
-* `internal/repository`: PostgreSQL access and transaction helpers.
-* `internal/service`: business use cases and consistency rules.
-* `internal/handler`: HTTP request/response logic only.
-* `internal/worker`: message consumer orchestration.
-* `internal/queue`: RabbitMQ abstraction and implementation.
-* `internal/external`: simulated fraud checker, processor, notifier.
+1. Apply the payment or ledger mutation.
+2. Insert the required outbox event in the same transaction.
+3. Commit.
+4. Let the relay publish committed events.
 
-Do not create packages before there is a real need.
+Relay rules:
 
----
+- read a small ordered batch
+- coordinate with `FOR UPDATE SKIP LOCKED`
+- publish persistent messages
+- require publisher confirms
+- mark published only after confirmation
+- leave failures retryable
 
-## Database Rules
+Duplicate publication after a crash is expected. Worker idempotency, not an
+exactly-once claim, protects correctness.
 
-Use PostgreSQL as the source of truth.
+## RabbitMQ And Worker Rules
 
-For payment and ledger logic:
+RabbitMQ is transport, not state storage. Messages carry stable IDs; workers load
+the current payment from PostgreSQL.
 
-* Use database transactions.
-* Use row-level locking where required, especially account balance mutation.
-* Use unique constraints for idempotency and duplicate ledger prevention.
-* Treat queue delivery as at-least-once.
-* Make handlers and workers idempotent.
-* Prefer `SELECT ... FOR UPDATE` for rows whose balance/status will be mutated.
-* Do not rely on in-memory locks for correctness.
+Consumer flow:
 
-Ledger entries should be append-only. Do not update existing ledger rows to “fix” money movement. Insert compensating entries instead.
+1. Validate the message.
+2. Load current payment state.
+3. Treat stale/already-applied work as a successful no-op.
+4. Run deterministic external behavior outside a transaction.
+5. Apply the guarded database transaction and next outbox event.
+6. Commit.
+7. Acknowledge on the receiving channel.
 
----
+Use durable queues, persistent messages, bounded prefetch, manual acknowledgements,
+small bounded retries, and a DLQ. Do not immediately requeue poison messages in a
+hot loop.
 
-## Queue Rules
+Keep worker handlers independent from RabbitMQ delivery types so their behavior is
+easy to unit-test.
 
-RabbitMQ should be used for asynchronous workflow, not as the source of truth.
+## Reconciliation Rules
 
-Queue messages should contain stable identifiers, usually:
+Weekend reconciliation is a one-shot, read-only command.
 
-```json
-{
-  "payment_id": "...",
-  "attempt": 1,
-  "correlation_id": "..."
-}
-```
+It may report:
 
-Avoid putting full mutable payment objects in messages.
+- payment status and ledger mismatches
+- unexpected ledger movement
+- stale pending/processing payments
+- stale unpublished outbox events
 
-Consumers should:
+It must not update payment state, balances, ledger entries, or outbox rows. Do not
+add automatic repair or external settlement comparison before the weekend version
+is complete.
 
-1. Receive message.
-2. Load current payment state from DB.
-3. Check whether the message is still relevant.
-4. Apply idempotent business operation.
-5. Commit DB changes.
-6. Ack only after successful commit.
+## HTTP And Error Rules
 
-If a message is duplicated or redelivered, it must not corrupt payment state or ledger balances.
+Handlers may decode JSON, validate request shape, call services, map errors, and
+encode responses. Business logic stays in services/repositories.
 
----
+Keep the current JSON `idempotency_key` for the weekend. Continue using body size
+limits, unknown-field rejection, content-type validation, safe client errors, and
+request timeouts.
 
-## HTTP/API Rules
+Classify worker errors:
 
-The HTTP API should be boring and simple.
+- invalid/permanent: reject or DLQ
+- duplicate/stale: acknowledge as no-op
+- transient database/broker/external: bounded retry
+- definitive fraud/processor result: business transition
+- exhausted retry: DLQ and structured error log
 
-Use:
+## Testing Priorities
 
-* `net/http`
-* JSON request/response bodies
-* request body size limits
-* request validation
-* proper status codes
-* context timeouts where appropriate
-
-Handlers should not contain core business logic.
-
-A handler may:
-
-* decode JSON
-* validate basic request shape
-* call service method
-* map domain errors to HTTP status codes
-* encode JSON response
-
----
-
-## Error Handling
-
-Use explicit domain errors for expected cases, for example:
-
-* payment not found
-* account not found
-* insufficient balance
-* invalid state transition
-* duplicate idempotency key handled as success
-* invalid request body
-
-Do not expose internal database errors directly to API clients.
-
-Log internal errors with useful structured fields:
-
-* `payment_id`
-* `account_id`
-* `idempotency_key`
-* `worker`
-* `attempt`
-* `error`
-
----
-
-## Security Expectations
-
-Even though this is a take-home project, follow basic security practice:
-
-* Do not log secrets.
-* Do not hardcode production-like credentials.
-* Load config from environment variables.
-* Use parameterized SQL only.
-* Limit request body size.
-* Validate amount, sender, receiver, and idempotency key.
-* Use timeouts for HTTP server and external simulations.
-* Return safe error messages to clients.
-
----
-
-## Testing Expectations
-
-Prioritize meaningful tests over coverage vanity.
-
-Important tests:
-
-* payment state machine transitions
-* idempotency behavior
-* insufficient balance
-* sender debit happens once
-* receiver credit happens once
-* refund happens once
-* duplicate worker message is safe
-* invalid transition is rejected
-* integration path from create payment to final status
-
-Use deterministic fakes for fraud checker and payment processor. Do not depend on randomness in tests.
-
-When adding tests, focus on important behavior and edge cases that protect correctness. Avoid noisy or too-obvious tests. If a test exposes a missing or broken implementation, let it fail instead of weakening the assertion.
-
----
-
-## Observability Expectations
-
-Use structured logs.
-
-Minimum useful fields:
-
-* `payment_id`
-* `correlation_id`
-* `status`
-* `worker`
-* `attempt`
-* `duration_ms`
-* `error`
-
-Add `/health`.
-
-Metrics are useful but optional. If implemented, keep them simple.
-
----
-
-## How To Help Me
-
-Prioritize answers that help me recognize reusable backend patterns:
-
-* Name the pattern when useful, for example idempotent worker, transaction boundary, state machine, outbox, or optimistic concurrency.
-* Explain the core intuition in one or two sentences.
-* Connect the advice to this payment pipeline instead of giving generic theory.
-* Keep examples small and focused on the current decision.
-* Avoid broad lectures, long lists, and unrelated production concerns.
-
-When I ask “what next?”, give me the next concrete implementation step only.
-
-Good answer style:
-
-```txt
-Next: create internal/config and wire cmd/api/main.go to load env, connect DB, ping DB, and expose /health.
-```
-
-Bad answer style:
-
-```txt
-Here are the next 15 things you need to do...
-```
-
-When reviewing my code:
-
-* Identify correctness bugs first.
-* Then reliability issues.
-* Then simplification opportunities.
-* Then style improvements.
-* Explain why each issue matters.
-* Avoid rewriting everything unless necessary.
-
-When giving examples:
-
-* Prefer small focused snippets.
-* Show only the relevant part.
-* Do not generate entire files unless explicitly requested.
-
----
-
-## Take-Home Scope Control
-
-Do not push unnecessary production complexity.
-
-Good additions:
-
-* PostgreSQL transactions
-* RabbitMQ ack/retry/DLQ
-* idempotent workers
-* structured logs
-* graceful shutdown
-* tests for core logic
-* clear README
-
-Avoid unless explicitly requested:
-
-* Kubernetes
-* distributed tracing
-* advanced metrics dashboards
-* full event sourcing
-* complex CQRS
-* custom framework
-* premature generic abstractions
-* multiple services when one binary plus workers is enough
-
----
-
-## Definition of Done
-
-The project should be considered successful when:
-
-* API can create a payment and return immediately.
-* Same idempotency key returns the same payment.
-* Fraud worker processes pending payments.
-* Payment worker processes fraud-approved payments.
-* Notification worker does not affect payment outcome.
-* Ledger balances remain correct.
-* Duplicate/retried messages are safe.
-* Workers can crash without losing committed payments.
-* README explains architecture, tradeoffs, and failure handling.
-* Tests cover core correctness.
+Prioritize tests that prove:
+
+- payment and initial outbox event are atomic
+- debit, credit, and refund each happen once
+- duplicate worker events are safe
+- outbox is marked published only after broker confirmation
+- ack occurs only after database success
+- reconciliation detects deliberately seeded discrepancies
+- one create-to-completed integration path works with a duplicated event
+
+Use real PostgreSQL for repository behavior, a small RabbitMQ integration test for
+transport behavior, and deterministic fakes for business outcomes.
+
+## Review Order
+
+When reviewing code, report findings in this order:
+
+1. money or state correctness bugs
+2. crash, acknowledgement, retry, and duplicate-delivery risks
+3. security issues
+4. missing high-value tests
+5. simplification and Go style
+
+Explain the concrete failure scenario and suggest the smallest fix. Avoid rewriting
+the whole slice.
+
+## Weekend Definition Of Done
+
+The project is ready for initial job applications when:
+
+- Docker Compose starts the required services
+- API creates and retrieves payments
+- outbox records are atomic with payment changes
+- relay publishes with confirms
+- fraud and processor consumers complete the flow
+- workers manually acknowledge after commit
+- retries are bounded and exhausted messages reach a DLQ
+- duplicate messages preserve state, balances, and ledger entries
+- read-only reconciliation reports seeded discrepancies
+- structured logs make a payment traceable
+- critical deterministic tests pass
+- README status matches reality
+
+Notification logging is optional. Deferred improvements do not block this
+milestone.
