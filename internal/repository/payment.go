@@ -18,7 +18,13 @@ func NewPaymentRepository(db dbtx) *PaymentRepository {
 
 func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentParams) (*domain.Payment, error) {
 	payment := &domain.Payment{}
-	err := r.db.QueryRow(ctx, `
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(ctx, `
 		INSERT INTO payments (amount, sender_id, receiver_id, idempotency_key, description)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
@@ -37,6 +43,16 @@ func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentPara
 		return nil, err
 	}
 
+	_, err = tx.Exec(ctx, `
+		INSERT INTO payment_events (payment_id, event_type)
+		VALUES ($1, $2)
+	`, payment.ID, domain.PaymentEventTypeCreated)
+
+	if err != nil {
+		return nil, err
+	}
+
+	tx.Commit(ctx)
 	return payment, nil
 }
 
