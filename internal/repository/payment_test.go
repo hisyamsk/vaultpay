@@ -107,6 +107,107 @@ func ledgerEntryCount(t *testing.T, ctx context.Context, tx dbtx, paymentID uuid
 	return count
 }
 
+func paymentEventCount(t *testing.T, ctx context.Context, tx dbtx, paymentID uuid.UUID) int {
+	t.Helper()
+
+	var count int
+	err := tx.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM payment_events
+		WHERE payment_id = $1
+	`, paymentID).Scan(&count)
+	require.NoError(t, err)
+
+	return count
+}
+
+func TestPaymentRepository_Create_WritesOneUnpublishedCreatedEvent(t *testing.T) {
+	repo, ctx := newTestRepo(t)
+
+	senderID := createAccount(t, ctx, repo.db, 2000)
+	receiverID := createAccount(t, ctx, repo.db, 1000)
+	params := CreatePaymentParams{
+		Amount:         500,
+		SenderID:       senderID,
+		ReceiverID:     receiverID,
+		IdempotencyKey: "idem-created-event",
+	}
+
+	payment, err := repo.Create(ctx, params)
+	require.NoError(t, err)
+
+	var (
+		eventType       domain.PaymentEventType
+		payload         []byte
+		publishAttempts int
+		published       bool
+		attempted       bool
+		lastErrorSet    bool
+	)
+	err = repo.db.QueryRow(ctx, `
+		SELECT event_type,
+		       payload,
+		       publish_attempts,
+		       published_at IS NOT NULL,
+		       last_attempted_at IS NOT NULL,
+		       last_error IS NOT NULL
+		FROM payment_events
+		WHERE payment_id = $1
+	`, payment.ID).Scan(
+		&eventType,
+		&payload,
+		&publishAttempts,
+		&published,
+		&attempted,
+		&lastErrorSet,
+	)
+	require.NoError(t, err)
+	require.Equal(t, domain.PaymentEventTypeCreated, eventType)
+	require.JSONEq(t, `{}`, string(payload))
+	require.Zero(t, publishAttempts)
+	require.False(t, published)
+	require.False(t, attempted)
+	require.False(t, lastErrorSet)
+	require.Equal(t, 1, paymentEventCount(t, ctx, repo.db, payment.ID))
+
+	_, err = repo.Create(ctx, params)
+	require.ErrorIs(t, err, ErrDuplicateIdempotencyKey)
+	require.Equal(t, 1, paymentEventCount(t, ctx, repo.db, payment.ID))
+}
+
+func TestPaymentRepository_Create_RollsBackPaymentWhenEventInsertFails(t *testing.T) {
+	repo, ctx := newTestRepo(t)
+
+	_, err := repo.db.Exec(ctx, `
+		ALTER TABLE payment_events
+		ADD CONSTRAINT payment_events_reject_created_for_test
+		CHECK (event_type <> 'payment.created')
+	`)
+	require.NoError(t, err)
+
+	senderID := createAccount(t, ctx, repo.db, 2000)
+	receiverID := createAccount(t, ctx, repo.db, 1000)
+	idempotencyKey := "idem-event-insert-failure"
+
+	payment, err := repo.Create(ctx, CreatePaymentParams{
+		Amount:         500,
+		SenderID:       senderID,
+		ReceiverID:     receiverID,
+		IdempotencyKey: idempotencyKey,
+	})
+	require.Error(t, err)
+	require.Nil(t, payment)
+
+	var paymentCount int
+	err = repo.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM payments
+		WHERE idempotency_key = $1
+	`, idempotencyKey).Scan(&paymentCount)
+	require.NoError(t, err)
+	require.Zero(t, paymentCount)
+}
+
 func TestPaymentRepository_CreateFindAndUpdateStatus(t *testing.T) {
 	repo, ctx := newTestRepo(t)
 
