@@ -10,12 +10,12 @@ incrementally after the first complete version.
 
 > **Status:** payment creation, state transitions, atomic balance movements, and
 > transport-independent fraud behavior are implemented. RabbitMQ wiring, the
-> outbox relay, the processor worker, and reconciliation are the remaining weekend
-> work.
+> outbox relay, the processor worker, and reconciliation are the remaining work
+> for the initial version.
 
-See [REQUIREMENTS.md](REQUIREMENTS.md) for the weekend acceptance criteria.
+See [REQUIREMENTS.md](REQUIREMENTS.md) for the initial-version acceptance criteria.
 
-## Weekend Scope
+## Initial Scope
 
 The first portfolio version will demonstrate:
 
@@ -97,15 +97,15 @@ safe while still demonstrating the control used to detect pipeline gaps.
 | Append-only movement entries and duplicate guards | Implemented |
 | Fraud worker core behavior | Implemented |
 | Basic `/health` endpoint | Implemented |
-| `GET /api/v1/payments/{id}` | Weekend work |
-| Transactional outbox writes | Weekend work |
-| RabbitMQ relay and topology | Weekend work |
-| Fraud RabbitMQ consumer wiring | Weekend work |
-| Deterministic processor worker | Weekend work |
-| Notification logging worker | Weekend work if time permits |
-| Read-only reconciliation command | Weekend work |
+| `GET /api/v1/payments/{id}` | Initial-version work |
+| Transactional outbox writes | Initial-version work |
+| RabbitMQ relay and topology | Initial-version work |
+| Fraud RabbitMQ consumer wiring | Initial-version work |
+| Deterministic processor worker | Initial-version work |
+| Notification logging worker | Optional initial-version work |
+| Read-only reconciliation command | Initial-version work |
 
-## Weekend Implementation Order
+## Initial Implementation Order
 
 1. Insert `payment.created` into the outbox in the payment creation transaction.
 2. Add the RabbitMQ exchange, queues, relay, publisher confirms, and manual ack.
@@ -186,7 +186,7 @@ go test ./...
 
 ## Deferred Improvements
 
-These are valuable follow-up work, not weekend requirements:
+These are valuable follow-up improvements, not initial-version requirements:
 
 1. Convert movement entries into balanced double-entry journals with a clearing
    account and currency-aware accounts.

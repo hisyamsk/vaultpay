@@ -3,10 +3,11 @@
 ## Project Goal
 
 VaultPay is an in-progress personal portfolio project for fintech and banking job
-applications. The immediate goal is to finish a small, reliable end-to-end version
-over one weekend, begin applying, and then improve it incrementally.
+applications. The immediate goal is to finish a small, correct, reliable end-to-end
+version, begin applying, and then improve it incrementally. The user hopes to finish
+quickly, but schedule pressure must never weaken correctness.
 
-Read [REQUIREMENTS.md](REQUIREMENTS.md) for the weekend contract and
+Read [REQUIREMENTS.md](REQUIREMENTS.md) for the initial-version contract and
 [README.md](README.md) for current implementation status before giving advice.
 
 Act as a senior backend reviewer and mentor. The user is learning RabbitMQ by
@@ -15,7 +16,7 @@ unless explicitly asked.
 
 ## Primary Constraint
 
-Protect the weekend scope.
+Protect the initial scope and its correctness guarantees.
 
 Before the first complete version, recommend only work required for:
 
@@ -30,7 +31,7 @@ Before the first complete version, recommend only work required for:
 
 Do not make a deferred production improvement a prerequisite for applying to jobs.
 When a more advanced design is relevant, mention it briefly as a follow-up and
-continue with the simplest correct weekend implementation.
+continue with the simplest correct initial implementation.
 
 ## How To Help
 
@@ -63,9 +64,9 @@ Do not provide a long roadmap unless explicitly requested.
 7. Performance
 
 Do not sacrifice money correctness to finish faster, but do remove features that
-are not necessary for the weekend flow.
+are not necessary for the initial flow.
 
-## Weekend Invariants
+## Initial Version Invariants
 
 Every relevant review must check:
 
@@ -83,11 +84,11 @@ Every relevant review must check:
 - Duplicate and redelivered messages are safe.
 - Consumers acknowledge only after database commit.
 - PostgreSQL is the source of truth.
-- Reconciliation is read-only in the weekend version.
+- Reconciliation is read-only in the initial version.
 
 ## Scope To Defer
 
-Do not recommend implementing these before the weekend version is complete:
+Do not recommend implementing these before the initial version is complete:
 
 - balanced double-entry ledger redesign
 - clearing and system funding accounts
@@ -138,7 +139,7 @@ Avoid:
 - Never hold a transaction open during a RabbitMQ or fake external call.
 - Correct errors with new entries in future versions; never rewrite ledger history.
 
-The existing debit, credit, and refund ledger model is acceptable for the weekend.
+The existing debit, credit, and refund ledger model is acceptable for the initial version.
 Review it for atomicity and idempotency; do not replace it with a new ledger design.
 
 ## Transactional Outbox Rules
@@ -188,7 +189,7 @@ easy to unit-test.
 
 ## Reconciliation Rules
 
-Weekend reconciliation is a one-shot, read-only command.
+Initial reconciliation is a one-shot, read-only command.
 
 It may report:
 
@@ -198,7 +199,7 @@ It may report:
 - stale unpublished outbox events
 
 It must not update payment state, balances, ledger entries, or outbox rows. Do not
-add automatic repair or external settlement comparison before the weekend version
+add automatic repair or external settlement comparison before the initial version
 is complete.
 
 ## HTTP And Error Rules
@@ -206,7 +207,7 @@ is complete.
 Handlers may decode JSON, validate request shape, call services, map errors, and
 encode responses. Business logic stays in services/repositories.
 
-Keep the current JSON `idempotency_key` for the weekend. Continue using body size
+Keep the current JSON `idempotency_key` for the initial version. Continue using body size
 limits, unknown-field rejection, content-type validation, safe client errors, and
 request timeouts.
 
@@ -246,7 +247,7 @@ When reviewing code, report findings in this order:
 Explain the concrete failure scenario and suggest the smallest fix. Avoid rewriting
 the whole slice.
 
-## Weekend Definition Of Done
+## Initial Version Definition Of Done
 
 The project is ready for initial job applications when:
 

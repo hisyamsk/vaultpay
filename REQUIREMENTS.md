@@ -1,13 +1,14 @@
-# VaultPay Weekend Requirements
+# VaultPay Initial Version Requirements
 
 ## 1. Goal
 
 Finish a small, working payment pipeline that is credible in a fintech job
 application and can be explained end to end.
 
-The weekend version prioritizes a complete reliable flow over broad production
-features. Anything under **Deferred Improvements** is explicitly not required
-before applying for jobs.
+The initial version prioritizes a complete, correct, and reliable flow over broad
+production features. Anything under **Deferred Improvements** is explicitly not
+required before applying for jobs, but correctness requirements are never relaxed
+to meet a schedule.
 
 ## 2. System Boundary
 
@@ -23,7 +24,7 @@ system does not process real money or card data.
 
 ## 3. Required Invariants
 
-The weekend implementation must preserve:
+The initial implementation must preserve:
 
 1. An idempotency key creates at most one payment.
 2. Replaying the same request returns the existing payment.
@@ -78,7 +79,7 @@ Required behavior:
 - Return the existing payment for an exact idempotent replay.
 - Return `409 Conflict` when the key is reused for a different payment intent.
 
-The JSON idempotency key is retained for the weekend to avoid unnecessary API
+The JSON idempotency key is retained for the initial version to avoid unnecessary API
 rework. Moving it to an HTTP header is deferred.
 
 ### `GET /api/v1/payments/{payment_id}`
@@ -170,12 +171,12 @@ bounded number of retries without immediate hot-loop requeueing.
   entry, move to `failed`, and insert `payment.failed` into the outbox.
 - Duplicate delivery must not credit or refund twice.
 
-The weekend fake does not model a processor accepting a request while its response
+The initial fake does not model a processor accepting a request while its response
 is lost. Unknown external outcomes are an important deferred improvement.
 
 ## 10. Notification Worker
 
-This worker is optional for the weekend and must not delay the critical flow.
+This worker is optional for the initial version and must not delay the critical flow.
 
 If implemented:
 
@@ -198,7 +199,7 @@ most once. Account balance updates and ledger inserts must remain in the same
 transaction.
 
 Balanced double-entry journals and a clearing account are deferred. Do not redesign
-the ledger before the weekend version works end to end.
+the ledger before the initial version works end to end.
 
 ## 12. Reconciliation V1
 
@@ -241,7 +242,7 @@ payment_id event_id correlation_id worker attempt status error duration_ms
 
 API, relay, and worker binaries should stop on context cancellation, stop taking
 new work, and close database and RabbitMQ connections. Advanced metrics are
-deferred; useful logs are sufficient for the weekend.
+deferred; useful logs are sufficient for the initial version.
 
 ## 15. Required Tests
 
@@ -265,7 +266,7 @@ create -> outbox -> fraud -> outbox -> processor -> completed
 Deliver at least one event twice in that test and verify final balances and ledger
 entry counts remain correct.
 
-## 16. Weekend Definition Of Done
+## 16. Initial Version Definition Of Done
 
 The first application-ready version is done when:
 
