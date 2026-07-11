@@ -1,6 +1,6 @@
 ## Add Outbox Repository Operations
 
-- [ ] Add a small domain/repository type for a stored outbox event: database ID, event ID, event type, payment ID, payload, creation time, and publish metadata.
+- [x] Add a small domain/repository type for a stored outbox event: database ID, event ID, event type, payment ID, payload, creation time, and publish metadata.
 - [ ] Add a repository method that claims a small ordered batch of unpublished events.
 - [ ] Order claims by `created_at`, then the database primary key for stable ordering.
 - [ ] Select candidates with `FOR UPDATE SKIP LOCKED` inside a short PostgreSQL transaction.
