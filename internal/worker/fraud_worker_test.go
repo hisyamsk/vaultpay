@@ -81,9 +81,8 @@ func TestFraudWorkerHandleMessageDropsInvalidPaymentID(t *testing.T) {
 	worker := newTestFraudWorker(t, nil, nil)
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     uuid.Nil,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: uuid.Nil,
+		Attempt:   1,
 	})
 
 	require.NoError(t, err)
@@ -100,9 +99,8 @@ func TestFraudWorkerHandleMessageDropsMissingPayment(t *testing.T) {
 	}, nil)
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.NoError(t, err)
@@ -120,9 +118,8 @@ func TestFraudWorkerHandleMessageReturnsFindPaymentErrorForRetry(t *testing.T) {
 	}, nil)
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.ErrorIs(t, err, dbErr)
@@ -154,9 +151,8 @@ func TestFraudWorkerHandleMessageSkipsNonPendingPayment(t *testing.T) {
 			}, nil)
 
 			err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-				PaymentID:     paymentID,
-				Attempt:       1,
-				CorrelationID: "correlation-1",
+				PaymentID: paymentID,
+				Attempt:   1,
 			})
 
 			require.NoError(t, err)
@@ -195,9 +191,8 @@ func TestFraudWorkerHandleMessageApprovedPaymentStartsProcessing(t *testing.T) {
 	})
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.NoError(t, err)
@@ -233,9 +228,8 @@ func TestFraudWorkerHandleMessageRejectedPaymentRejectsPendingPayment(t *testing
 	})
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.NoError(t, err)
@@ -264,9 +258,8 @@ func TestFraudWorkerHandleMessageReturnsFraudCheckerErrorForRetry(t *testing.T) 
 	})
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.ErrorIs(t, err, checkErr)
@@ -297,9 +290,8 @@ func TestFraudWorkerHandleMessageReturnsRejectErrorForRetry(t *testing.T) {
 	})
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.ErrorIs(t, err, rejectErr)
@@ -330,9 +322,8 @@ func TestFraudWorkerHandleMessageReturnsStartProcessingErrorForRetry(t *testing.
 	})
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.ErrorIs(t, err, startErr)
@@ -358,9 +349,8 @@ func TestFraudWorkerHandleMessageDropsUnrecognizedFraudDecision(t *testing.T) {
 	})
 
 	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID:     paymentID,
-		Attempt:       1,
-		CorrelationID: "correlation-1",
+		PaymentID: paymentID,
+		Attempt:   1,
 	})
 
 	require.NoError(t, err)
