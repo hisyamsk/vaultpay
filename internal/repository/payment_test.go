@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
@@ -137,33 +139,64 @@ func TestPaymentRepository_Create_WritesOneUnpublishedCreatedEvent(t *testing.T)
 	require.NoError(t, err)
 
 	var (
+		eventID         uuid.UUID
+		eventPaymentID  uuid.UUID
 		eventType       domain.PaymentEventType
 		payload         []byte
+		createdAt       time.Time
 		publishAttempts int
 		published       bool
 		attempted       bool
 		lastErrorSet    bool
 	)
 	err = repo.db.QueryRow(ctx, `
-		SELECT event_type,
-		       payload,
-		       publish_attempts,
+			SELECT event_id,
+			       payment_id,
+			       event_type,
+			       payload,
+			       created_at,
+			       publish_attempts,
 		       published_at IS NOT NULL,
 		       last_attempted_at IS NOT NULL,
 		       last_error IS NOT NULL
 		FROM payment_events
-		WHERE payment_id = $1
-	`, payment.ID).Scan(
+			WHERE payment_id = $1
+		`, payment.ID).Scan(
+		&eventID,
+		&eventPaymentID,
 		&eventType,
 		&payload,
+		&createdAt,
 		&publishAttempts,
 		&published,
 		&attempted,
 		&lastErrorSet,
 	)
 	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, eventID)
+	require.Equal(t, payment.ID, eventPaymentID)
 	require.Equal(t, domain.PaymentEventTypeCreated, eventType)
-	require.JSONEq(t, `{}`, string(payload))
+
+	var eventPayload struct {
+		EventID    uuid.UUID               `json:"event_id"`
+		EventType  domain.PaymentEventType `json:"event_type"`
+		PaymentID  uuid.UUID               `json:"payment_id"`
+		Attempt    int                     `json:"attempt"`
+		OccurredAt time.Time               `json:"occurred_at"`
+	}
+	require.NoError(t, json.Unmarshal(payload, &eventPayload))
+	require.Equal(t, eventID, eventPayload.EventID)
+	require.Equal(t, eventType, eventPayload.EventType)
+	require.Equal(t, eventPaymentID, eventPayload.PaymentID)
+	require.Equal(t, 1, eventPayload.Attempt)
+	require.False(t, eventPayload.OccurredAt.IsZero())
+	require.True(t, eventPayload.OccurredAt.Equal(createdAt))
+
+	var payloadFields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(payload, &payloadFields))
+	require.Len(t, payloadFields, 5)
+	require.NotContains(t, payloadFields, "correlation_id")
+
 	require.Zero(t, publishAttempts)
 	require.False(t, published)
 	require.False(t, attempted)
@@ -177,6 +210,8 @@ func TestPaymentRepository_Create_WritesOneUnpublishedCreatedEvent(t *testing.T)
 
 func TestPaymentRepository_Create_RollsBackPaymentWhenEventInsertFails(t *testing.T) {
 	repo, ctx := newTestRepo(t)
+	var eventCountBefore int
+	require.NoError(t, repo.db.QueryRow(ctx, `SELECT COUNT(*) FROM payment_events`).Scan(&eventCountBefore))
 
 	_, err := repo.db.Exec(ctx, `
 		ALTER TABLE payment_events
@@ -206,6 +241,10 @@ func TestPaymentRepository_Create_RollsBackPaymentWhenEventInsertFails(t *testin
 	`, idempotencyKey).Scan(&paymentCount)
 	require.NoError(t, err)
 	require.Zero(t, paymentCount)
+
+	var eventCountAfter int
+	require.NoError(t, repo.db.QueryRow(ctx, `SELECT COUNT(*) FROM payment_events`).Scan(&eventCountAfter))
+	require.Equal(t, eventCountBefore, eventCountAfter)
 }
 
 func TestPaymentRepository_CreateFindAndUpdateStatus(t *testing.T) {

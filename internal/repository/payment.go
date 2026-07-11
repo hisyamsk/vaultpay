@@ -43,16 +43,41 @@ func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentPara
 		return nil, err
 	}
 
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
 	_, err = tx.Exec(ctx, `
-		INSERT INTO payment_events (payment_id, event_type)
-		VALUES ($1, $2)
-	`, payment.ID, domain.PaymentEventTypeCreated)
+	  INSERT INTO payment_events (
+		  event_id,
+		  payment_id,
+		  event_type,
+		  payload
+	  )
+	  VALUES (
+		  $1,
+		  $2,
+		  $3,
+		  jsonb_build_object(
+			  'event_id', $1::uuid,
+			  'event_type', $3::varchar(100),
+			  'payment_id', $2::uuid,
+			  'attempt', 1,
+			  'occurred_at', NOW()
+		  )
+	  )
+	`, eventID, payment.ID, domain.PaymentEventTypeCreated)
 
 	if err != nil {
 		return nil, err
 	}
 
-	tx.Commit(ctx)
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return payment, nil
 }
 
