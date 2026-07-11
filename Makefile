@@ -1,4 +1,4 @@
-.PHONY: migrate-up migrate-down migrate-version docker-build docker-build-dev compose-up compose-down compose-logs compose-dev-up compose-dev-down compose-dev-logs
+.PHONY: migrate-create migrate-up migrate-down migrate-version docker-build docker-build-dev compose-up compose-down compose-logs compose-dev-up compose-dev-down compose-dev-logs
 
 ifneq (,$(wildcard .env))
 include .env
@@ -30,6 +30,10 @@ compose-dev-up:
 
 compose-dev-down:
 	docker compose -f docker-compose.dev.yml down
+
+migrate-create:
+	@test -n "$(name)" || (echo "usage: make migrate-create name=add_event_id" && exit 1)
+	migrate create -ext sql -dir db/migrations -seq "$(name)"
 
 migrate-up:
 	migrate -database "$(DATABASE_URL)" -path db/migrations up
