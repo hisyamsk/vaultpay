@@ -104,7 +104,6 @@ Minimum event fields:
   "event_type": "payment.created",
   "payment_id": "uuid",
   "attempt": 1,
-  "correlation_id": "uuid-or-string",
   "occurred_at": "timestamp"
 }
 ```
@@ -237,7 +236,7 @@ to API clients.
 Use `log/slog` structured logs with applicable fields:
 
 ```txt
-payment_id event_id correlation_id worker attempt status error duration_ms
+payment_id event_id worker attempt status error duration_ms
 ```
 
 API, relay, and worker binaries should stop on context cancellation, stop taking

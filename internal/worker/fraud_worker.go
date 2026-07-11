@@ -28,7 +28,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 	if msg.PaymentID == uuid.Nil {
 		w.logger.WarnContext(ctx, "dropping fraud message with invalid payment id",
 			slog.String("worker", "fraud"),
-			slog.String("correlation_id", msg.CorrelationID),
 			slog.Int("attempt", msg.Attempt),
 		)
 		return nil
@@ -40,7 +39,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 			w.logger.WarnContext(ctx, "dropping fraud message for missing payment",
 				slog.String("worker", "fraud"),
 				slog.String("payment_id", msg.PaymentID.String()),
-				slog.String("correlation_id", msg.CorrelationID),
 				slog.Int("attempt", msg.Attempt),
 			)
 			return nil
@@ -49,7 +47,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 		w.logger.ErrorContext(ctx, "failed to load payment for fraud check",
 			slog.String("worker", "fraud"),
 			slog.String("payment_id", msg.PaymentID.String()),
-			slog.String("correlation_id", msg.CorrelationID),
 			slog.Int("attempt", msg.Attempt),
 			slog.Any("error", err),
 		)
@@ -60,7 +57,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 		w.logger.InfoContext(ctx, "skipping stale fraud message",
 			slog.String("worker", "fraud"),
 			slog.String("payment_id", payment.ID.String()),
-			slog.String("correlation_id", msg.CorrelationID),
 			slog.Int("attempt", msg.Attempt),
 			slog.String("status", string(payment.Status)),
 		)
@@ -72,7 +68,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 		w.logger.ErrorContext(ctx, "fraud check failed",
 			slog.String("worker", "fraud"),
 			slog.String("payment_id", payment.ID.String()),
-			slog.String("correlation_id", msg.CorrelationID),
 			slog.Int("attempt", msg.Attempt),
 			slog.Any("error", err),
 		)
@@ -86,7 +81,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 			w.logger.ErrorContext(ctx, "failed to reject fraud-flagged payment",
 				slog.String("worker", "fraud"),
 				slog.String("payment_id", payment.ID.String()),
-				slog.String("correlation_id", msg.CorrelationID),
 				slog.Int("attempt", msg.Attempt),
 				slog.String("decision", string(fraudDecision)),
 				slog.Any("error", err),
@@ -99,7 +93,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 			w.logger.ErrorContext(ctx, "failed to start approved payment processing",
 				slog.String("worker", "fraud"),
 				slog.String("payment_id", payment.ID.String()),
-				slog.String("correlation_id", msg.CorrelationID),
 				slog.Int("attempt", msg.Attempt),
 				slog.String("decision", string(fraudDecision)),
 				slog.Any("error", err),
@@ -110,7 +103,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 		w.logger.ErrorContext(ctx, "dropping fraud message with unrecognized decision",
 			slog.String("worker", "fraud"),
 			slog.String("payment_id", payment.ID.String()),
-			slog.String("correlation_id", msg.CorrelationID),
 			slog.Int("attempt", msg.Attempt),
 			slog.String("decision", string(fraudDecision)),
 		)
@@ -120,7 +112,6 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 	w.logger.InfoContext(ctx, "handled fraud message",
 		slog.String("worker", "fraud"),
 		slog.String("payment_id", payment.ID.String()),
-		slog.String("correlation_id", msg.CorrelationID),
 		slog.Int("attempt", msg.Attempt),
 		slog.String("decision", string(fraudDecision)),
 	)

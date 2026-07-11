@@ -3,7 +3,6 @@ package queue
 import "github.com/google/uuid"
 
 type PaymentMessage struct {
-	PaymentID     uuid.UUID `json:"payment_id"`
-	Attempt       int       `json:"attempt"`
-	CorrelationID string    `json:"correlation_id"`
+	PaymentID uuid.UUID `json:"payment_id"`
+	Attempt   int       `json:"attempt"`
 }
