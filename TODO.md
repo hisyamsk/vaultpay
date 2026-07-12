@@ -30,7 +30,7 @@ Gate: outbox lifecycle behavior is proven with real PostgreSQL without RabbitMQ.
 
 - [x] Add the RabbitMQ Go client dependency.
 - [x] Add RabbitMQ to both Compose files with a persistent named volume and health check.
-- [ ] Add broker URL and bounded timeout settings to configuration.
+- [x] Add broker URL and bounded timeout settings to configuration.
 - [ ] Declare one durable topic exchange for payment events.
 - [ ] Declare a durable fraud queue bound to `payment.created`.
 - [ ] Declare a durable processor queue bound to `payment.processing`.
