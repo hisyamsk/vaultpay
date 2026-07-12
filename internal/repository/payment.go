@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/google/uuid"
@@ -47,27 +48,21 @@ func (r *PaymentRepository) Create(ctx context.Context, params CreatePaymentPara
 	if err != nil {
 		return nil, err
 	}
+	payload, err := json.Marshal(domain.PaymentEventPayload{
+		EventID:    eventID,
+		EventType:  domain.PaymentEventTypeCreated,
+		PaymentID:  payment.ID,
+		Attempt:    1,
+		OccurredAt: payment.CreatedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	_, err = tx.Exec(ctx, `
-	  INSERT INTO payment_events (
-		  event_id,
-		  payment_id,
-		  event_type,
-		  payload
-	  )
-	  VALUES (
-		  $1,
-		  $2,
-		  $3,
-		  jsonb_build_object(
-			  'event_id', $1::uuid,
-			  'event_type', $3::varchar(100),
-			  'payment_id', $2::uuid,
-			  'attempt', 1,
-			  'occurred_at', NOW()
-		  )
-	  )
-	`, eventID, payment.ID, domain.PaymentEventTypeCreated)
+		INSERT INTO payment_events (event_id, payment_id, event_type, payload)
+		VALUES ($1, $2, $3, $4)
+	`, eventID, payment.ID, domain.PaymentEventTypeCreated, payload)
 
 	if err != nil {
 		return nil, err

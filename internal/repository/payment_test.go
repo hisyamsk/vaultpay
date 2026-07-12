@@ -177,13 +177,7 @@ func TestPaymentRepository_Create_WritesOneUnpublishedCreatedEvent(t *testing.T)
 	require.Equal(t, payment.ID, eventPaymentID)
 	require.Equal(t, domain.PaymentEventTypeCreated, eventType)
 
-	var eventPayload struct {
-		EventID    uuid.UUID               `json:"event_id"`
-		EventType  domain.PaymentEventType `json:"event_type"`
-		PaymentID  uuid.UUID               `json:"payment_id"`
-		Attempt    int                     `json:"attempt"`
-		OccurredAt time.Time               `json:"occurred_at"`
-	}
+	var eventPayload domain.PaymentEventPayload
 	require.NoError(t, json.Unmarshal(payload, &eventPayload))
 	require.Equal(t, eventID, eventPayload.EventID)
 	require.Equal(t, eventType, eventPayload.EventType)
