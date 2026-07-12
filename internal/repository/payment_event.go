@@ -105,3 +105,23 @@ func (r *PaymentEventRepository) MarkPublished(ctx context.Context, eventID uuid
 
 	return nil
 }
+
+// RecordPublishFailure stores the latest publication error for eventID only
+// while the event is unpublished. It leaves published_at, publish_attempts, and
+// last_attempted_at unchanged so the existing claim lease controls when the
+// event may be retried. Repeated calls replace last_error with the latest error.
+// A failure reported after the event was published is a successful no-op.
+// Database errors include operation context and preserve the original error for
+// errors.Is.
+func (r *PaymentEventRepository) RecordPublishFailure(ctx context.Context, eventID uuid.UUID, lastError string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE payment_events
+		SET last_error = $1
+		WHERE event_id = $2 AND published_at IS NULL
+	`, lastError, eventID)
+
+	if err != nil {
+		return fmt.Errorf("record payment event publish failure: %w", err)
+	}
+	return nil
+}

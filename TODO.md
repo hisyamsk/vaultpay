@@ -10,8 +10,8 @@
 - [x] Commit the claim before making any RabbitMQ call.
 - [x] Add a method that sets `published_at` and clears `last_error` after confirmation.
 - [x] Guard the success update with `published_at IS NULL` so repeated confirmation handling is harmless.
-- [ ] Add a method that records `last_error` after a failed or unconfirmed publish.
-- [ ] Keep failed rows unpublished so they remain retryable.
+- [x] Add a method that records `last_error` after a failed or unconfirmed publish.
+- [x] Keep failed rows unpublished so they remain retryable.
 - [x] Wrap database errors with operation context using `%w`.
 
 Tests:
@@ -21,7 +21,7 @@ Tests:
 - [x] An expired claim becomes available again.
 - [x] Claim increments `publish_attempts` once per claim.
 - [x] Mark-success sets `published_at` only for the requested event.
-- [ ] Mark-failure leaves `published_at` null and stores the error.
+- [x] Mark-failure leaves `published_at` null and stores the error.
 - [x] Repeating mark-success does not corrupt the event.
 
 Gate: outbox lifecycle behavior is proven with real PostgreSQL without RabbitMQ.
