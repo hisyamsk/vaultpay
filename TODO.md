@@ -1,13 +1,13 @@
 ## Add Outbox Repository Operations
 
 - [x] Add a small domain/repository type for a stored outbox event: database ID, event ID, event type, payment ID, payload, creation time, and publish metadata.
-- [ ] Add a repository method that claims a small ordered batch of unpublished events.
-- [ ] Order claims by `created_at`, then the database primary key for stable ordering.
-- [ ] Select candidates with `FOR UPDATE SKIP LOCKED` inside a short PostgreSQL transaction.
-- [ ] Use `last_attempted_at` as a short claim lease so a second relay does not immediately claim the same rows after the transaction commits.
-- [ ] Allow rows with an expired claim lease to be retried after a relay crash.
-- [ ] Increment `publish_attempts` and set `last_attempted_at` when a publish attempt is claimed.
-- [ ] Commit the claim before making any RabbitMQ call.
+- [x] Add a repository method that atomically claims at most 10 unpublished events.
+- [x] Order claims by `created_at`, then the database primary key for stable ordering.
+- [x] Select candidates with `FOR UPDATE SKIP LOCKED` inside a short PostgreSQL transaction.
+- [x] Use `last_attempted_at` as a short claim lease so a second relay does not immediately claim the same rows after the transaction commits.
+- [x] Allow rows with an expired claim lease to be retried after a relay crash.
+- [x] Increment `publish_attempts` and set `last_attempted_at` when a publish attempt is claimed.
+- [x] Commit the claim before making any RabbitMQ call.
 - [ ] Add a method that sets `published_at` and clears `last_error` after confirmation.
 - [ ] Guard the success update with `published_at IS NULL` so repeated confirmation handling is harmless.
 - [ ] Add a method that records `last_error` after a failed or unconfirmed publish.
@@ -16,10 +16,10 @@
 
 Tests:
 
-- [ ] Claim returns only unpublished events in stable order and respects the batch limit.
-- [ ] Two concurrent claims do not return the same fresh event.
-- [ ] An expired claim becomes available again.
-- [ ] Claim increments `publish_attempts` once per claim.
+- [x] Claim returns only unpublished events in stable order and respects the batch limit.
+- [x] Two concurrent claims do not return the same fresh event.
+- [x] An expired claim becomes available again.
+- [x] Claim increments `publish_attempts` once per claim.
 - [ ] Mark-success sets `published_at` only for the requested event.
 - [ ] Mark-failure leaves `published_at` null and stores the error.
 - [ ] Repeating mark-success does not corrupt the event.
