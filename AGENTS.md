@@ -53,6 +53,45 @@ the payment, then integration-test that both records roll back together.
 
 Do not provide a long roadmap unless explicitly requested.
 
+## TDD Contracts
+
+When the user asks for a TDD contract:
+
+- Define the function or method's observable behavior before writing tests.
+- Write tests against public behavior and stored results, not private helpers or
+  the expected SQL implementation.
+- Cover the main success path and the important failure scenarios for the stated
+  contract. For money, state, ledger, and outbox operations, assert both what must
+  change and what must remain unchanged.
+- Add edge-case tests only when relevant. Consider missing records, invalid state,
+  exact boundary values, duplicate or repeated calls, canceled contexts,
+  concurrent calls, partial-failure rollback, and selection limits or ordering.
+- Prove idempotency explicitly when the operation may be retried: call it more than
+  once and assert that timestamps, counters, balances, ledger entries, and events
+  are not incorrectly duplicated or overwritten.
+- For repository methods, verify committed database state rather than checking only
+  the returned value. Use real PostgreSQL when behavior depends on transactions,
+  constraints, locking, SQL ordering, or PostgreSQL types.
+- Make assertions precise enough to catch the concrete bug being prevented. Check
+  exact IDs, statuses, counts, ordering, error identity with `errors.Is`, and all
+  relevant unchanged fields. Compare database timestamps using PostgreSQL's
+  supported precision instead of requiring Go nanosecond equality.
+- Keep tests deterministic and isolated. Do not depend on sleeps, randomness,
+  execution order, shared mutable fixtures, or data left by another test. Use fixed
+  inputs, explicit synchronization for concurrency tests, and reliable cleanup.
+- Give each test a behavior-focused name and keep its setup small enough that a
+  failure has one clear cause. Shared helpers may remove fixture noise but must not
+  hide the action or assertions being tested.
+- Do not add speculative cases unrelated to the current contract merely to increase
+  test count. Every test must protect a stated requirement, invariant, or realistic
+  failure scenario.
+- Add the function or method signature with a compiling no-op or empty
+  implementation. Do not implement the behavior the tests describe.
+- When feasible, run the focused tests and confirm that new tests fail because the
+  behavior is not implemented, not because of syntax errors or broken test setup.
+- Keep existing correct tests passing and never weaken a test to fit an incomplete
+  implementation.
+
 ## Engineering Priorities
 
 1. Correctness
