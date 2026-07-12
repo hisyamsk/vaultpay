@@ -32,7 +32,7 @@ func NewPaymentEventRepository(db dbtx) *PaymentEventRepository {
 func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpiredBefore time.Time) ([]domain.PaymentEvent, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("claim unpublished payment events: begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -47,13 +47,13 @@ func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpi
 	`, leaseExpiredBefore)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("claim unpublished payment events: query events: %w", err)
 	}
 	defer rows.Close()
 
 	events, err := pgx.CollectRows(rows, pgx.RowToStructByName[domain.PaymentEvent])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("claim unpublished payment events: collect events: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -74,13 +74,13 @@ func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpi
 		`, now, ids)
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("claim unpublished payment events: update claim metadata: %w", err)
 		}
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("claim unpublished payment events: commit transaction: %w", err)
 	}
 	return events, nil
 }

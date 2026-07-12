@@ -12,7 +12,7 @@
 - [x] Guard the success update with `published_at IS NULL` so repeated confirmation handling is harmless.
 - [ ] Add a method that records `last_error` after a failed or unconfirmed publish.
 - [ ] Keep failed rows unpublished so they remain retryable.
-- [ ] Wrap database errors with operation context using `%w`.
+- [x] Wrap database errors with operation context using `%w`.
 
 Tests:
 

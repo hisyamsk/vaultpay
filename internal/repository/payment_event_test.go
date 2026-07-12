@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
@@ -269,7 +268,8 @@ func TestPaymentEventRepository_ClaimUnpublishedHonorsCanceledContext(t *testing
 
 	claimed, err := eventRepo.ClaimUnpublished(canceledCtx, time.Now())
 	require.Error(t, err)
-	require.True(t, errors.Is(err, context.Canceled))
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "claim unpublished payment events")
 	require.Nil(t, claimed)
 
 	var attempts int
