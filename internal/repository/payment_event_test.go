@@ -359,3 +359,122 @@ func TestPaymentEventRepository_ClaimUnpublishedReturnsEmptyWhenNothingIsEligibl
 	require.NoError(t, err)
 	require.Empty(t, claimed)
 }
+
+func TestPaymentEventRepository_MarkPublishedUpdatesOnlyRequestedEvent(t *testing.T) {
+	paymentRepo, ctx := newTestRepo(t)
+	eventRepo := NewPaymentEventRepository(paymentRepo.db)
+	paymentID, _, _ := createPaymentWithoutEvent(t, ctx, paymentRepo.db)
+
+	now := time.Now().UTC()
+	previousAttempt := now.Add(-time.Minute)
+	lastError := "publisher confirmation timed out"
+	requested := createPaymentEventFixture(t, ctx, paymentRepo.db, paymentID, paymentEventFixtureOptions{
+		createdAt:       now.Add(-2 * time.Minute),
+		publishAttempts: 2,
+		lastAttemptedAt: &previousAttempt,
+		lastError:       &lastError,
+	})
+	other := createPaymentEventFixture(t, ctx, paymentRepo.db, paymentID, paymentEventFixtureOptions{
+		createdAt:       now.Add(-time.Minute),
+		publishAttempts: 1,
+		lastAttemptedAt: &previousAttempt,
+		lastError:       &lastError,
+	})
+	publishedAt := now.Add(time.Second)
+
+	err := eventRepo.MarkPublished(ctx, requested.EventID, publishedAt)
+	require.NoError(t, err)
+
+	var storedPublishedAt *time.Time
+	var storedLastError *string
+	var storedAttempts int
+	var storedLastAttemptedAt *time.Time
+	err = paymentRepo.db.QueryRow(ctx, `
+		SELECT published_at, last_error, publish_attempts, last_attempted_at
+		FROM payment_events
+		WHERE event_id = $1
+	`, requested.EventID).Scan(&storedPublishedAt, &storedLastError, &storedAttempts, &storedLastAttemptedAt)
+	require.NoError(t, err)
+	require.NotNil(t, storedPublishedAt)
+	require.WithinDuration(t, publishedAt, *storedPublishedAt, time.Microsecond)
+	require.Nil(t, storedLastError)
+	require.Equal(t, requested.PublishAttempts, storedAttempts)
+	require.NotNil(t, storedLastAttemptedAt)
+	require.WithinDuration(t, *requested.LastAttemptedAt, *storedLastAttemptedAt, time.Microsecond)
+
+	err = paymentRepo.db.QueryRow(ctx, `
+		SELECT published_at, last_error, publish_attempts, last_attempted_at
+		FROM payment_events
+		WHERE event_id = $1
+	`, other.EventID).Scan(&storedPublishedAt, &storedLastError, &storedAttempts, &storedLastAttemptedAt)
+	require.NoError(t, err)
+	require.Nil(t, storedPublishedAt)
+	require.Equal(t, other.LastError, storedLastError)
+	require.Equal(t, other.PublishAttempts, storedAttempts)
+	require.NotNil(t, storedLastAttemptedAt)
+	require.WithinDuration(t, *other.LastAttemptedAt, *storedLastAttemptedAt, time.Microsecond)
+}
+
+func TestPaymentEventRepository_MarkPublishedRepeatedCallPreservesFirstSuccess(t *testing.T) {
+	paymentRepo, ctx := newTestRepo(t)
+	eventRepo := NewPaymentEventRepository(paymentRepo.db)
+	paymentID, _, _ := createPaymentWithoutEvent(t, ctx, paymentRepo.db)
+
+	now := time.Now().UTC()
+	lastAttemptedAt := now.Add(-time.Minute)
+	event := createPaymentEventFixture(t, ctx, paymentRepo.db, paymentID, paymentEventFixtureOptions{
+		createdAt:       now.Add(-2 * time.Minute),
+		publishAttempts: 1,
+		lastAttemptedAt: &lastAttemptedAt,
+	})
+	firstPublishedAt := now
+	secondPublishedAt := now.Add(time.Minute)
+
+	require.NoError(t, eventRepo.MarkPublished(ctx, event.EventID, firstPublishedAt))
+	require.NoError(t, eventRepo.MarkPublished(ctx, event.EventID, secondPublishedAt))
+
+	var storedPublishedAt *time.Time
+	var storedAttempts int
+	var storedLastAttemptedAt *time.Time
+	err := paymentRepo.db.QueryRow(ctx, `
+		SELECT published_at, publish_attempts, last_attempted_at
+		FROM payment_events
+		WHERE event_id = $1
+	`, event.EventID).Scan(&storedPublishedAt, &storedAttempts, &storedLastAttemptedAt)
+	require.NoError(t, err)
+	require.NotNil(t, storedPublishedAt)
+	require.WithinDuration(t, firstPublishedAt, *storedPublishedAt, time.Microsecond)
+	require.Equal(t, event.PublishAttempts, storedAttempts)
+	require.NotNil(t, storedLastAttemptedAt)
+	require.WithinDuration(t, *event.LastAttemptedAt, *storedLastAttemptedAt, time.Microsecond)
+}
+
+func TestPaymentEventRepository_MarkPublishedHonorsCanceledContext(t *testing.T) {
+	paymentRepo, ctx := newTestRepo(t)
+	eventRepo := NewPaymentEventRepository(paymentRepo.db)
+	paymentID, _, _ := createPaymentWithoutEvent(t, ctx, paymentRepo.db)
+
+	lastError := "broker unavailable"
+	event := createPaymentEventFixture(t, ctx, paymentRepo.db, paymentID, paymentEventFixtureOptions{
+		createdAt: time.Now().UTC().Add(-time.Minute),
+		lastError: &lastError,
+	})
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	err := eventRepo.MarkPublished(canceledCtx, event.EventID, time.Now().UTC())
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "mark payment event published")
+
+	var storedPublishedAt *time.Time
+	var storedLastError *string
+	err = paymentRepo.db.QueryRow(ctx, `
+		SELECT published_at, last_error
+		FROM payment_events
+		WHERE event_id = $1
+	`, event.EventID).Scan(&storedPublishedAt, &storedLastError)
+	require.NoError(t, err)
+	require.Nil(t, storedPublishedAt)
+	require.Equal(t, event.LastError, storedLastError)
+}

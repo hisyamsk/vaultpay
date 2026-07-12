@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/jackc/pgx/v5"
 )
@@ -38,7 +40,7 @@ func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpi
 		SELECT id, event_id, payment_id, event_type, payload, created_at, publish_attempts,
 			published_at, last_attempted_at, last_error
 		FROM payment_events
-		WHERE published_at is NULL AND (last_attempted_at IS NULL OR last_attempted_at < $1)
+		WHERE published_at IS NULL AND (last_attempted_at IS NULL OR last_attempted_at < $1)
 		ORDER BY created_at ASC, id ASC
 		LIMIT 10
 		FOR UPDATE SKIP LOCKED
@@ -81,4 +83,25 @@ func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpi
 		return nil, err
 	}
 	return events, nil
+}
+
+// MarkPublished records that RabbitMQ confirmed publication of eventID.
+//
+// It sets published_at and clears last_error only while the event is still
+// unpublished. Calling it again for the same event is a successful no-op and
+// must not replace the first published_at value. It does not change claim
+// metadata or any other event. Database errors include operation context and
+// preserve the original error for errors.Is.
+func (r *PaymentEventRepository) MarkPublished(ctx context.Context, eventID uuid.UUID, publishedAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE payment_events
+		SET published_at = $1, last_error = NULL
+		WHERE event_id = $2 AND published_at IS NULL
+	`, publishedAt, eventID)
+
+	if err != nil {
+		return fmt.Errorf("mark payment event published: update event: %w", err)
+	}
+
+	return nil
 }

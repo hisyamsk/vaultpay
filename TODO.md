@@ -8,8 +8,8 @@
 - [x] Allow rows with an expired claim lease to be retried after a relay crash.
 - [x] Increment `publish_attempts` and set `last_attempted_at` when a publish attempt is claimed.
 - [x] Commit the claim before making any RabbitMQ call.
-- [ ] Add a method that sets `published_at` and clears `last_error` after confirmation.
-- [ ] Guard the success update with `published_at IS NULL` so repeated confirmation handling is harmless.
+- [x] Add a method that sets `published_at` and clears `last_error` after confirmation.
+- [x] Guard the success update with `published_at IS NULL` so repeated confirmation handling is harmless.
 - [ ] Add a method that records `last_error` after a failed or unconfirmed publish.
 - [ ] Keep failed rows unpublished so they remain retryable.
 - [ ] Wrap database errors with operation context using `%w`.
@@ -20,9 +20,9 @@ Tests:
 - [x] Two concurrent claims do not return the same fresh event.
 - [x] An expired claim becomes available again.
 - [x] Claim increments `publish_attempts` once per claim.
-- [ ] Mark-success sets `published_at` only for the requested event.
+- [x] Mark-success sets `published_at` only for the requested event.
 - [ ] Mark-failure leaves `published_at` null and stores the error.
-- [ ] Repeating mark-success does not corrupt the event.
+- [x] Repeating mark-success does not corrupt the event.
 
 Gate: outbox lifecycle behavior is proven with real PostgreSQL without RabbitMQ.
 
