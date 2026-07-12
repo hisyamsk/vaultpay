@@ -20,16 +20,16 @@ const (
 )
 
 type Payment struct {
-	ID             uuid.UUID
-	Amount         int64
-	SenderID       uuid.UUID
-	ReceiverID     uuid.UUID
-	IdempotencyKey string
-	Status         PaymentStatus
-	ErrorCode      *string
-	Description    *string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             uuid.UUID     `db:"id"`
+	Amount         int64         `db:"amount"`
+	SenderID       uuid.UUID     `db:"sender_id"`
+	ReceiverID     uuid.UUID     `db:"receiver_id"`
+	IdempotencyKey string        `db:"idempotency_key"`
+	Status         PaymentStatus `db:"status"`
+	ErrorCode      *string       `db:"error_code"`
+	Description    *string       `db:"description"`
+	CreatedAt      time.Time     `db:"created_at"`
+	UpdatedAt      time.Time     `db:"updated_at"`
 }
 
 func (s PaymentStatus) CanTransitionTo(next PaymentStatus) bool {
