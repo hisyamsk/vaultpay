@@ -1,0 +1,1 @@
+DROP INDEX payment_events_unpublished_order_idx;
