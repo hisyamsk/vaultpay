@@ -81,7 +81,7 @@ func DeclareProcessorQueue(ch *amqp.Channel) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("bind fraud queue to payment.created: %w", err)
+		return fmt.Errorf("bind processing queue to payment.processing: %w", err)
 	}
 	return nil
 }
