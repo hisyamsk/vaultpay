@@ -161,7 +161,7 @@ func DeclarePaymentDLQ(ch *amqp.Channel) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("delcare payment DLQ: %w", err)
+		return fmt.Errorf("declare payment DLQ: %w", err)
 	}
 	return nil
 }
