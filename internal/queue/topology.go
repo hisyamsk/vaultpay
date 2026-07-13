@@ -9,8 +9,13 @@ import (
 
 const (
 	PaymentEventsExchange = "vaultpay.payment.events"
-	FraudQueue            = "vaultpay.fraud"
-	ProcessorQueue        = "vaultpay.processor"
+	PaymentRetryExchange  = "vaultpay.payment.retry"
+
+	FraudQueue        = "vaultpay.fraud"
+	ProcessorQueue    = "vaultpay.processor"
+	PaymentRetryQueue = "vaultpay.payment.retry.wait"
+
+	retryDelayMilliseconds int32 = 5000
 )
 
 func DeclarePaymentEventsExchange(ch *amqp.Channel) error {
@@ -81,7 +86,65 @@ func DeclareProcessorQueue(ch *amqp.Channel) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("bind processing queue to payment.processing: %w", err)
+		return fmt.Errorf("bind processor queue to payment.processing: %w", err)
 	}
+	return nil
+}
+
+func DeclarePaymentRetryPath(ch *amqp.Channel) error {
+	err := ch.ExchangeDeclare(
+		PaymentRetryExchange,
+		"topic",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		return fmt.Errorf("declare payment retry path exchange: %w", err)
+	}
+
+	args := amqp.Table{
+		"x-message-ttl":          retryDelayMilliseconds,
+		"x-dead-letter-exchange": PaymentEventsExchange,
+	}
+
+	q, err := ch.QueueDeclare(
+		PaymentRetryQueue,
+		true,
+		false,
+		false,
+		false,
+		args,
+	)
+
+	if err != nil {
+		return fmt.Errorf("declare payment retry path queue: %w", err)
+	}
+
+	err = ch.QueueBind(
+		q.Name,
+		string(domain.PaymentEventTypeCreated),
+		PaymentRetryExchange,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("bind payment retry path queue to payment.created: %w", err)
+	}
+
+	err = ch.QueueBind(
+		q.Name,
+		string(domain.PaymentEventTypeProcessing),
+		PaymentRetryExchange,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("bind payment retry path queue to payment.processing: %w", err)
+	}
+
 	return nil
 }
