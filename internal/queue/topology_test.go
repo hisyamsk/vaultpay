@@ -97,3 +97,59 @@ func TestDeclareFraudQueueRoutesOnlyPaymentCreated(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok)
 }
+
+func TestDeclareProcessorQueueCanBeRepeated(t *testing.T) {
+	ch := newTestRabbitMQChannel(t)
+	require.NoError(t, DeclarePaymentEventsExchange(ch))
+
+	require.NoError(t, DeclareProcessorQueue(ch))
+	require.NoError(t, DeclareProcessorQueue(ch))
+
+	_, err := ch.QueueDeclarePassive(
+		ProcessorQueue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	require.NoError(t, err)
+}
+
+func TestDeclareProcessorQueueRoutesOnlyPaymentProcessing(t *testing.T) {
+	ch := newTestRabbitMQChannel(t)
+	require.NoError(t, DeclarePaymentEventsExchange(ch))
+	require.NoError(t, DeclareProcessorQueue(ch))
+
+	_, err := ch.QueuePurge(ProcessorQueue, false)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := ch.QueuePurge(ProcessorQueue, false)
+		require.NoError(t, err)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	processingBody := []byte(`{"event_type":"payment.processing"}`)
+	err = ch.PublishWithContext(ctx, PaymentEventsExchange, "payment.processing", false, false, amqp.Publishing{
+		ContentType: "application/json",
+		Body:        processingBody,
+	})
+	require.NoError(t, err)
+
+	delivery, ok, err := ch.Get(ProcessorQueue, true)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, processingBody, delivery.Body)
+
+	err = ch.PublishWithContext(ctx, PaymentEventsExchange, "payment.created", false, false, amqp.Publishing{
+		ContentType: "application/json",
+		Body:        []byte(`{"event_type":"payment.created"}`),
+	})
+	require.NoError(t, err)
+
+	_, ok, err = ch.Get(ProcessorQueue, true)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
