@@ -276,3 +276,63 @@ func TestDeclarePaymentRetryPathReturnsMessagesToTheirWorkQueueAfterDelay(t *tes
 		})
 	}
 }
+
+func TestDeclarePaymentDLQCanBeRepeated(t *testing.T) {
+	ch := newTestRabbitMQChannel(t)
+
+	require.NoError(t, DeclarePaymentDLQ(ch))
+	require.NoError(t, DeclarePaymentDLQ(ch))
+
+	_, err := ch.QueueDeclarePassive(
+		PaymentDLQ,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	require.NoError(t, err)
+}
+
+func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
+	ch := newTestRabbitMQChannel(t)
+	require.NoError(t, DeclarePaymentDLQ(ch))
+
+	_, err := ch.QueuePurge(PaymentDLQ, false)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := ch.QueuePurge(PaymentDLQ, false)
+		require.NoError(t, err)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	require.NoError(t, ch.Confirm(false))
+	body := []byte(`{"reason":"malformed"}`)
+	confirmation, err := ch.PublishWithDeferredConfirmWithContext(ctx, "", PaymentDLQ, false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, confirmation)
+
+	confirmed, err := confirmation.WaitContext(ctx)
+	require.NoError(t, err)
+	require.True(t, confirmed)
+
+	dlq, err := ch.QueueInspect(PaymentDLQ)
+	require.NoError(t, err)
+	require.Equal(t, 1, dlq.Messages)
+
+	delivery, ok, err := ch.Get(PaymentDLQ, false)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, body, delivery.Body)
+	require.NoError(t, delivery.Ack(false))
+
+	dlq, err = ch.QueueInspect(PaymentDLQ)
+	require.NoError(t, err)
+	require.Zero(t, dlq.Messages)
+}

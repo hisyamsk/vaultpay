@@ -10,6 +10,7 @@ import (
 const (
 	PaymentEventsExchange = "vaultpay.payment.events"
 	PaymentRetryExchange  = "vaultpay.payment.retry"
+	PaymentDLQ            = "vaultpay.payment.dlq"
 
 	FraudQueue        = "vaultpay.fraud"
 	ProcessorQueue    = "vaultpay.processor"
@@ -146,5 +147,21 @@ func DeclarePaymentRetryPath(ch *amqp.Channel) error {
 		return fmt.Errorf("bind payment retry path queue to payment.processing: %w", err)
 	}
 
+	return nil
+}
+
+func DeclarePaymentDLQ(ch *amqp.Channel) error {
+	_, err := ch.QueueDeclare(
+		PaymentDLQ,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		return fmt.Errorf("delcare payment DLQ: %w", err)
+	}
 	return nil
 }

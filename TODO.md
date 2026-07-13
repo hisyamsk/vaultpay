@@ -35,7 +35,7 @@ Gate: outbox lifecycle behavior is proven with real PostgreSQL without RabbitMQ.
 - [x] Declare a durable fraud queue bound to `payment.created`.
 - [x] Declare a durable processor queue bound to `payment.processing`.
 - [x] Declare one delayed retry path that dead-letters messages back to their work queue after a short delay.
-- [ ] Declare a durable DLQ for malformed messages and exhausted retries.
+- [x] Declare a durable DLQ for malformed messages and exhausted retries.
 - [ ] Make topology declaration idempotent so restarting the worker is safe.
 - [ ] Use bounded prefetch and manual acknowledgements on consumer channels.
 - [ ] Confirm Compose can start PostgreSQL, RabbitMQ, the API, and the worker dependencies from a clean volume.
