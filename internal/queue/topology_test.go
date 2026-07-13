@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -10,15 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testRabbitMQURL = "amqp://vaultpay:vaultpay_dev@localhost:5672/"
+
 func newTestRabbitMQChannel(t *testing.T) *amqp.Channel {
 	t.Helper()
 
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
-	if rabbitMQURL == "" {
-		t.Skip("RABBITMQ_URL is not set; skipping RabbitMQ integration test")
-	}
-
-	conn, err := amqp.DialConfig(rabbitMQURL, amqp.Config{
+	conn, err := amqp.DialConfig(testRabbitMQURL, amqp.Config{
 		Dial: amqp.DefaultDial(5 * time.Second),
 	})
 	require.NoError(t, err)
@@ -242,7 +238,17 @@ func TestDeclarePaymentRetryPathReturnsMessagesToTheirWorkQueueAfterDelay(t *tes
 			require.NoError(t, err)
 			require.True(t, confirmed)
 
-			retryQueue, err := ch.QueueInspect(PaymentRetryQueue)
+			retryQueue, err := ch.QueueDeclarePassive(
+				PaymentRetryQueue,
+				true,
+				false,
+				false,
+				false,
+				amqp.Table{
+					"x-message-ttl":          retryDelayMilliseconds,
+					"x-dead-letter-exchange": PaymentEventsExchange,
+				},
+			)
 			require.NoError(t, err)
 			require.Equal(t, 1, retryQueue.Messages)
 
@@ -270,7 +276,14 @@ func TestDeclarePaymentRetryPathReturnsMessagesToTheirWorkQueueAfterDelay(t *tes
 				t.Fatalf("message was not returned to %s: %v", tt.destinationQueue, consumeCtx.Err())
 			}
 
-			otherQueue, err := ch.QueueInspect(tt.otherQueue)
+			otherQueue, err := ch.QueueDeclarePassive(
+				tt.otherQueue,
+				true,
+				false,
+				false,
+				false,
+				nil,
+			)
 			require.NoError(t, err)
 			require.Zero(t, otherQueue.Messages)
 		})
@@ -322,7 +335,14 @@ func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, confirmed)
 
-	dlq, err := ch.QueueInspect(PaymentDLQ)
+	dlq, err := ch.QueueDeclarePassive(
+		PaymentDLQ,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
 	require.NoError(t, err)
 	require.Equal(t, 1, dlq.Messages)
 
@@ -332,7 +352,14 @@ func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
 	require.Equal(t, body, delivery.Body)
 	require.NoError(t, delivery.Ack(false))
 
-	dlq, err = ch.QueueInspect(PaymentDLQ)
+	dlq, err = ch.QueueDeclarePassive(
+		PaymentDLQ,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
 	require.NoError(t, err)
 	require.Zero(t, dlq.Messages)
 }
