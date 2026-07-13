@@ -363,3 +363,50 @@ func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, dlq.Messages)
 }
+
+func TestDeclarePaymentTopologyCanBeRedeclaredFromNewConnectionWithoutLosingQueuedMessage(t *testing.T) {
+	firstWorkerChannel := newTestRabbitMQChannel(t)
+
+	// Remove one topology component so this test cannot pass only because a
+	// previous test or worker already declared everything.
+	require.NoError(t, DeclarePaymentDLQ(firstWorkerChannel))
+	_, err := firstWorkerChannel.QueuePurge(PaymentDLQ, false)
+	require.NoError(t, err)
+	_, err = firstWorkerChannel.QueueDelete(PaymentDLQ, false, false, false)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, DeclarePaymentDLQ(firstWorkerChannel))
+		_, err := firstWorkerChannel.QueuePurge(PaymentDLQ, false)
+		require.NoError(t, err)
+	})
+
+	require.NoError(t, DeclarePaymentTopology(firstWorkerChannel))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	require.NoError(t, firstWorkerChannel.Confirm(false))
+	body := []byte(`{"reason":"exhausted_retries"}`)
+	confirmation, err := firstWorkerChannel.PublishWithDeferredConfirmWithContext(ctx, "", PaymentDLQ, false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         body,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, confirmation)
+
+	confirmed, err := confirmation.WaitContext(ctx)
+	require.NoError(t, err)
+	require.True(t, confirmed)
+
+	// A separate connection represents a newly started worker process.
+	restartedWorkerChannel := newTestRabbitMQChannel(t)
+	require.NoError(t, DeclarePaymentTopology(restartedWorkerChannel))
+
+	delivery, ok, err := restartedWorkerChannel.Get(PaymentDLQ, false)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, body, delivery.Body)
+	require.NoError(t, delivery.Ack(false))
+}

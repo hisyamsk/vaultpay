@@ -165,3 +165,27 @@ func DeclarePaymentDLQ(ch *amqp.Channel) error {
 	}
 	return nil
 }
+
+func DeclarePaymentTopology(ch *amqp.Channel) error {
+	if err := DeclarePaymentEventsExchange(ch); err != nil {
+		return fmt.Errorf("declare payment topology: %w", err)
+	}
+
+	if err := DeclareFraudQueue(ch); err != nil {
+		return fmt.Errorf("declare payment topology: %w", err)
+	}
+
+	if err := DeclareProcessorQueue(ch); err != nil {
+		return fmt.Errorf("declare payment topology: %w", err)
+	}
+
+	if err := DeclarePaymentRetryPath(ch); err != nil {
+		return fmt.Errorf("declare payment topology: %w", err)
+	}
+
+	if err := DeclarePaymentDLQ(ch); err != nil {
+		return fmt.Errorf("declare payment topology: %w", err)
+	}
+
+	return nil
+}
