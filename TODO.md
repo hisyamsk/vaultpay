@@ -60,8 +60,8 @@ Tests:
 - [x] A confirmed publish marks the event published.
 - [x] A rejected or timed-out publish never sets `published_at`.
 - [x] A publisher error is stored and the event remains retryable.
-- [ ] A repeated relay pass does not republish an event already marked published.
-- [ ] A simulated crash after publish but before mark-success leaves a duplicate possible rather than losing the event.
+- [x] A repeated relay pass does not republish an event already marked published.
+- [x] A simulated crash after publish but before mark-success leaves a duplicate possible rather than losing the event.
 - [x] One small RabbitMQ integration test proves a persistent message is confirmed and routed to the expected queue.
 
 Gate: committed `payment.created` events reach the fraud queue and are marked published only after confirmation.

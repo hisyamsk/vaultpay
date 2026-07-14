@@ -23,11 +23,14 @@ type relayPublishFailure struct {
 
 type fakeRelayEventRepository struct {
 	events           []domain.PaymentEvent
+	claimResults     [][]domain.PaymentEvent
 	claimErr         error
 	markErr          error
+	markErrors       []error
 	recordFailureErr error
 	claimCalls       int
 	leaseCutoff      time.Time
+	leaseCutoffs     []time.Time
 	markedEvents     []relayMarkedEvent
 	publishFailures  []relayPublishFailure
 }
@@ -35,17 +38,25 @@ type fakeRelayEventRepository struct {
 func (r *fakeRelayEventRepository) ClaimUnpublished(_ context.Context, leaseExpiredBefore time.Time) ([]domain.PaymentEvent, error) {
 	r.claimCalls++
 	r.leaseCutoff = leaseExpiredBefore
+	r.leaseCutoffs = append(r.leaseCutoffs, leaseExpiredBefore)
 	if r.claimErr != nil {
 		return nil, r.claimErr
+	}
+	if len(r.claimResults) >= r.claimCalls {
+		return r.claimResults[r.claimCalls-1], nil
 	}
 	return r.events, nil
 }
 
 func (r *fakeRelayEventRepository) MarkPublished(_ context.Context, eventID uuid.UUID, publishedAt time.Time) error {
+	markCall := len(r.markedEvents)
 	r.markedEvents = append(r.markedEvents, relayMarkedEvent{
 		eventID:     eventID,
 		publishedAt: publishedAt,
 	})
+	if len(r.markErrors) > markCall {
+		return r.markErrors[markCall]
+	}
 	return r.markErr
 }
 
@@ -177,4 +188,68 @@ func TestRelayRunOnceReturnsRecordFailureErrorWithoutMarkingPublished(t *testing
 	require.Equal(t, []domain.PaymentEvent{event}, publisher.published)
 	require.Empty(t, repository.markedEvents)
 	require.Equal(t, []relayPublishFailure{{eventID: event.EventID, lastError: publishErr.Error()}}, repository.publishFailures)
+}
+
+func TestRelayRunOnceDoesNotRepublishEventMarkedPublishedByPreviousPass(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC)
+	event := domain.PaymentEvent{
+		EventID:   uuid.MustParse("55555555-5555-5555-5555-555555555555"),
+		EventType: domain.PaymentEventTypeCreated,
+		Payload:   []byte(`{"event_id":"55555555-5555-5555-5555-555555555555"}`),
+	}
+	repository := &fakeRelayEventRepository{
+		claimResults: [][]domain.PaymentEvent{
+			{event},
+			nil,
+		},
+	}
+	publisher := &fakeRelayPublisher{}
+	relay := newRelayContract(t, repository, publisher, 30*time.Second, now)
+
+	require.NoError(t, relay.RunOnce(context.Background()))
+	require.NoError(t, relay.RunOnce(context.Background()))
+
+	require.Equal(t, 2, repository.claimCalls)
+	require.Equal(t, []domain.PaymentEvent{event}, publisher.published)
+	require.Equal(t, []relayMarkedEvent{{eventID: event.EventID, publishedAt: now}}, repository.markedEvents)
+	require.Empty(t, repository.publishFailures)
+}
+
+func TestRelayRunOnceCanRepublishAfterConfirmationSucceededButMarkFailed(t *testing.T) {
+	firstPassTime := time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC)
+	claimLease := 30 * time.Second
+	markErr := errors.New("database unavailable after RabbitMQ confirmation")
+	event := domain.PaymentEvent{
+		EventID:   uuid.MustParse("66666666-6666-6666-6666-666666666666"),
+		EventType: domain.PaymentEventTypeCreated,
+		Payload:   []byte(`{"event_id":"66666666-6666-6666-6666-666666666666"}`),
+	}
+	repository := &fakeRelayEventRepository{
+		claimResults: [][]domain.PaymentEvent{
+			{event},
+			{event},
+		},
+		markErrors: []error{markErr, nil},
+	}
+	publisher := &fakeRelayPublisher{}
+	relay := NewRelay(repository, publisher, claimLease)
+	currentTime := firstPassTime
+	relay.now = func() time.Time { return currentTime }
+
+	err := relay.RunOnce(context.Background())
+	require.ErrorIs(t, err, markErr)
+
+	currentTime = firstPassTime.Add(claimLease + time.Second)
+	require.NoError(t, relay.RunOnce(context.Background()))
+
+	require.Equal(t, []time.Time{
+		firstPassTime.Add(-claimLease),
+		currentTime.Add(-claimLease),
+	}, repository.leaseCutoffs)
+	require.Equal(t, []domain.PaymentEvent{event, event}, publisher.published)
+	require.Equal(t, []relayMarkedEvent{
+		{eventID: event.EventID, publishedAt: firstPassTime},
+		{eventID: event.EventID, publishedAt: currentTime},
+	}, repository.markedEvents)
+	require.Empty(t, repository.publishFailures)
 }
