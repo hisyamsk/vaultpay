@@ -48,7 +48,7 @@ Gate: queues, bindings, retry path, and DLQ can be inspected in a running local 
 - [x] Publish the stored JSON payload without rebuilding business state from memory.
 - [x] Route by the stored event type.
 - [x] Publish persistent messages with JSON content type and `event_id` as the message ID.
-- [ ] Use a bounded context for each publish and confirmation wait.
+- [x] Use a bounded context for each publish and confirmation wait.
 - [x] Treat broker rejection, timeout, channel closure, and connection errors as failed publication.
 - [ ] Mark an event published only after receiving a positive confirmation.
 - [ ] Record an error and leave the event unpublished for every failed or unknown confirmation result.

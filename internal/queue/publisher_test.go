@@ -11,6 +11,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testPublishTimeout = 5 * time.Second
+
+func TestNewRabbitMQPublisherRejectsNonPositivePublishTimeout(t *testing.T) {
+	ch := newTestRabbitMQChannel(t)
+
+	tests := []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{name: "zero", timeout: 0},
+		{name: "negative", timeout: -time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			publisher, err := NewRabbitMQPublisher(ch, tt.timeout)
+
+			require.Error(t, err)
+			require.Nil(t, publisher)
+		})
+	}
+}
+
 func TestRabbitMQPublisherPublishesStoredEventWithConfirmationAndMetadata(t *testing.T) {
 	ch := newTestRabbitMQChannel(t)
 	require.NoError(t, DeclarePaymentEventsExchange(ch))
@@ -23,7 +46,7 @@ func TestRabbitMQPublisherPublishesStoredEventWithConfirmationAndMetadata(t *tes
 		require.NoError(t, err)
 	})
 
-	publisher, err := NewRabbitMQPublisher(ch)
+	publisher, err := NewRabbitMQPublisher(ch, testPublishTimeout)
 	require.NoError(t, err)
 
 	storedPayload := []byte(`{"event_id":"11111111-1111-1111-1111-111111111111","committed_marker":"publish-this-exact-json"}`)
@@ -33,10 +56,9 @@ func TestRabbitMQPublisherPublishesStoredEventWithConfirmationAndMetadata(t *tes
 		Payload:   storedPayload,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	require.NoError(t, publisher.Publish(ctx, event))
+	// The caller does not need to add its own deadline: the publisher must apply
+	// its configured timeout while still respecting parent cancellation.
+	require.NoError(t, publisher.Publish(context.Background(), event))
 
 	delivery, ok, err := ch.Get(FraudQueue, false)
 	require.NoError(t, err)
@@ -62,7 +84,7 @@ func TestRabbitMQPublisherDoesNotPublishWithCanceledContext(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	publisher, err := NewRabbitMQPublisher(ch)
+	publisher, err := NewRabbitMQPublisher(ch, testPublishTimeout)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,7 +106,7 @@ func TestRabbitMQPublisherDoesNotPublishWithCanceledContext(t *testing.T) {
 
 func TestRabbitMQPublisherReturnsErrorWhenChannelIsClosed(t *testing.T) {
 	ch := newTestRabbitMQChannel(t)
-	publisher, err := NewRabbitMQPublisher(ch)
+	publisher, err := NewRabbitMQPublisher(ch, testPublishTimeout)
 	require.NoError(t, err)
 	require.NoError(t, ch.Close())
 
