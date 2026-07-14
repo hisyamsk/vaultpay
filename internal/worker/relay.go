@@ -40,18 +40,18 @@ func (r *Relay) RunOnce(ctx context.Context) error {
 	now := r.now()
 	leaseExpiredBefore := now.Add(-r.claimLease)
 
-	unpublished_events, err := r.eventsRepo.ClaimUnpublished(ctx, leaseExpiredBefore)
+	unpublishedEvents, err := r.eventsRepo.ClaimUnpublished(ctx, leaseExpiredBefore)
 	if err != nil {
 		return fmt.Errorf("relay claim unpublished events: %w", err)
 	}
 
-	for _, event := range unpublished_events {
+	for _, event := range unpublishedEvents {
 		err := r.publisher.Publish(ctx, event)
 		if err != nil {
 			dbErr := r.eventsRepo.RecordPublishFailure(ctx, event.EventID, err.Error())
 
 			if dbErr != nil {
-				return fmt.Errorf("relay publis and record failure: %w", errors.Join(dbErr, err))
+				return fmt.Errorf("relay publish and record failure: %w", errors.Join(dbErr, err))
 			}
 
 			return fmt.Errorf("relay publish event: %w", err)
