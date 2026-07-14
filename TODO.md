@@ -43,7 +43,7 @@ Gate: queues, bindings, retry path, and DLQ can be inspected in a running local 
 
 ## Implement The Confirming Publisher And Relay
 
-- [ ] Define a small publisher interface near the relay so relay tests do not require RabbitMQ.
+- [x] Define a small publisher interface near the relay so relay tests do not require RabbitMQ.
 - [ ] Enable publisher confirms on the dedicated publisher channel before publishing.
 - [ ] Publish the stored JSON payload without rebuilding business state from memory.
 - [ ] Route by the stored event type.
