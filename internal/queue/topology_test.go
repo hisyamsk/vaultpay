@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -25,7 +26,10 @@ func newTestRabbitMQChannel(t *testing.T) *amqp.Channel {
 	ch, err := conn.Channel()
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		require.NoError(t, ch.Close())
+		err := ch.Close()
+		if !errors.Is(err, amqp.ErrClosed) {
+			require.NoError(t, err)
+		}
 	})
 
 	return ch

@@ -20,15 +20,6 @@ func NewPaymentEventRepository(db dbtx) *PaymentEventRepository {
 	return &PaymentEventRepository{db: db}
 }
 
-// ClaimUnpublished claims at most paymentEventClaimBatchSize events ordered by
-// created_at and then id. An event is eligible when it is unpublished and has
-// either never been attempted or was last attempted before leaseExpiredBefore.
-//
-// Claiming increments publish_attempts and sets last_attempted_at for every
-// returned event in the same short transaction. Concurrent callers must receive
-// disjoint fresh claims by selecting with FOR UPDATE SKIP LOCKED. A canceled
-// context returns its error without changing any event. This method commits the
-// database claim before returning and never calls RabbitMQ.
 func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpiredBefore time.Time) ([]domain.PaymentEvent, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -85,13 +76,6 @@ func (r *PaymentEventRepository) ClaimUnpublished(ctx context.Context, leaseExpi
 	return events, nil
 }
 
-// MarkPublished records that RabbitMQ confirmed publication of eventID.
-//
-// It sets published_at and clears last_error only while the event is still
-// unpublished. Calling it again for the same event is a successful no-op and
-// must not replace the first published_at value. It does not change claim
-// metadata or any other event. Database errors include operation context and
-// preserve the original error for errors.Is.
 func (r *PaymentEventRepository) MarkPublished(ctx context.Context, eventID uuid.UUID, publishedAt time.Time) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE payment_events
@@ -106,13 +90,6 @@ func (r *PaymentEventRepository) MarkPublished(ctx context.Context, eventID uuid
 	return nil
 }
 
-// RecordPublishFailure stores the latest publication error for eventID only
-// while the event is unpublished. It leaves published_at, publish_attempts, and
-// last_attempted_at unchanged so the existing claim lease controls when the
-// event may be retried. Repeated calls replace last_error with the latest error.
-// A failure reported after the event was published is a successful no-op.
-// Database errors include operation context and preserve the original error for
-// errors.Is.
 func (r *PaymentEventRepository) RecordPublishFailure(ctx context.Context, eventID uuid.UUID, lastError string) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE payment_events

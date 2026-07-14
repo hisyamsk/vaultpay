@@ -45,11 +45,11 @@ Gate: queues, bindings, retry path, and DLQ can be inspected in a running local 
 
 - [x] Define a small publisher interface near the relay so relay tests do not require RabbitMQ.
 - [x] Enable publisher confirms on the dedicated publisher channel before publishing.
-- [ ] Publish the stored JSON payload without rebuilding business state from memory.
-- [ ] Route by the stored event type.
-- [ ] Publish persistent messages with JSON content type and `event_id` as the message ID.
+- [x] Publish the stored JSON payload without rebuilding business state from memory.
+- [x] Route by the stored event type.
+- [x] Publish persistent messages with JSON content type and `event_id` as the message ID.
 - [ ] Use a bounded context for each publish and confirmation wait.
-- [ ] Treat broker rejection, timeout, channel closure, and connection errors as failed publication.
+- [x] Treat broker rejection, timeout, channel closure, and connection errors as failed publication.
 - [ ] Mark an event published only after receiving a positive confirmation.
 - [ ] Record an error and leave the event unpublished for every failed or unknown confirmation result.
 - [ ] Poll in small batches with a bounded idle delay and stop promptly on context cancellation.
@@ -62,7 +62,7 @@ Tests:
 - [ ] A publisher error is stored and the event remains retryable.
 - [ ] A repeated relay pass does not republish an event already marked published.
 - [ ] A simulated crash after publish but before mark-success leaves a duplicate possible rather than losing the event.
-- [ ] One small RabbitMQ integration test proves a persistent message is confirmed and routed to the expected queue.
+- [x] One small RabbitMQ integration test proves a persistent message is confirmed and routed to the expected queue.
 
 Gate: committed `payment.created` events reach the fraud queue and are marked published only after confirmation.
 
