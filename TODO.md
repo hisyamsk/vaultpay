@@ -50,16 +50,16 @@ Gate: queues, bindings, retry path, and DLQ can be inspected in a running local 
 - [x] Publish persistent messages with JSON content type and `event_id` as the message ID.
 - [x] Use a bounded context for each publish and confirmation wait.
 - [x] Treat broker rejection, timeout, channel closure, and connection errors as failed publication.
-- [ ] Mark an event published only after receiving a positive confirmation.
-- [ ] Record an error and leave the event unpublished for every failed or unknown confirmation result.
+- [x] Mark an event published only after receiving a positive confirmation.
+- [x] Record an error and leave the event unpublished for every failed or unknown confirmation result.
 - [ ] Poll in small batches with a bounded idle delay and stop promptly on context cancellation.
 - [ ] Log `event_id`, `payment_id`, `event_type`, `publish_attempts`, result, error, and duration.
 
 Tests:
 
-- [ ] A confirmed publish marks the event published.
-- [ ] A rejected or timed-out publish never sets `published_at`.
-- [ ] A publisher error is stored and the event remains retryable.
+- [x] A confirmed publish marks the event published.
+- [x] A rejected or timed-out publish never sets `published_at`.
+- [x] A publisher error is stored and the event remains retryable.
 - [ ] A repeated relay pass does not republish an event already marked published.
 - [ ] A simulated crash after publish but before mark-success leaves a duplicate possible rather than losing the event.
 - [x] One small RabbitMQ integration test proves a persistent message is confirmed and routed to the expected queue.

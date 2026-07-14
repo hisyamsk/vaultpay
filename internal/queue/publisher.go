@@ -28,10 +28,6 @@ func NewRabbitMQPublisher(channel *amqp.Channel, publishTimeout time.Duration) (
 	}, nil
 }
 
-// Publish sends the stored event payload and returns nil only after RabbitMQ
-// positively confirms it. The configured publish timeout bounds both sending
-// the message and waiting for its confirmation. An earlier cancellation or
-// deadline on ctx still takes precedence.
 func (p *RabbitMQPublisher) Publish(ctx context.Context, event domain.PaymentEvent) error {
 	publishCtx, cancel := context.WithTimeout(ctx, p.publishTimeout)
 	defer cancel()

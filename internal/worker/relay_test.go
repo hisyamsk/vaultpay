@@ -1,0 +1,180 @@
+package worker
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/hisyamsk/vaultpay/internal/domain"
+	"github.com/stretchr/testify/require"
+)
+
+type relayMarkedEvent struct {
+	eventID     uuid.UUID
+	publishedAt time.Time
+}
+
+type relayPublishFailure struct {
+	eventID   uuid.UUID
+	lastError string
+}
+
+type fakeRelayEventRepository struct {
+	events           []domain.PaymentEvent
+	claimErr         error
+	markErr          error
+	recordFailureErr error
+	claimCalls       int
+	leaseCutoff      time.Time
+	markedEvents     []relayMarkedEvent
+	publishFailures  []relayPublishFailure
+}
+
+func (r *fakeRelayEventRepository) ClaimUnpublished(_ context.Context, leaseExpiredBefore time.Time) ([]domain.PaymentEvent, error) {
+	r.claimCalls++
+	r.leaseCutoff = leaseExpiredBefore
+	if r.claimErr != nil {
+		return nil, r.claimErr
+	}
+	return r.events, nil
+}
+
+func (r *fakeRelayEventRepository) MarkPublished(_ context.Context, eventID uuid.UUID, publishedAt time.Time) error {
+	r.markedEvents = append(r.markedEvents, relayMarkedEvent{
+		eventID:     eventID,
+		publishedAt: publishedAt,
+	})
+	return r.markErr
+}
+
+func (r *fakeRelayEventRepository) RecordPublishFailure(_ context.Context, eventID uuid.UUID, lastError string) error {
+	r.publishFailures = append(r.publishFailures, relayPublishFailure{
+		eventID:   eventID,
+		lastError: lastError,
+	})
+	return r.recordFailureErr
+}
+
+type fakeRelayPublisher struct {
+	err       error
+	published []domain.PaymentEvent
+}
+
+func (p *fakeRelayPublisher) Publish(_ context.Context, event domain.PaymentEvent) error {
+	p.published = append(p.published, event)
+	return p.err
+}
+
+func newRelayContract(t *testing.T, events PaymentEventRepository, publisher PaymentEventPublisher, claimLease time.Duration, now time.Time) *Relay {
+	t.Helper()
+
+	relay := NewRelay(events, publisher, claimLease)
+	relay.now = func() time.Time { return now }
+	return relay
+}
+
+func TestRelayRunOnceMarksConfirmedEventPublished(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC)
+	claimLease := 30 * time.Second
+	event := domain.PaymentEvent{
+		EventID:   uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+		EventType: domain.PaymentEventTypeCreated,
+		Payload:   []byte(`{"event_id":"11111111-1111-1111-1111-111111111111"}`),
+	}
+	repository := &fakeRelayEventRepository{events: []domain.PaymentEvent{event}}
+	publisher := &fakeRelayPublisher{}
+	relay := newRelayContract(t, repository, publisher, claimLease, now)
+
+	err := relay.RunOnce(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repository.claimCalls)
+	require.Equal(t, now.Add(-claimLease), repository.leaseCutoff)
+	require.Equal(t, []domain.PaymentEvent{event}, publisher.published)
+	require.Equal(t, []relayMarkedEvent{{eventID: event.EventID, publishedAt: now}}, repository.markedEvents)
+	require.Empty(t, repository.publishFailures)
+}
+
+func TestRelayRunOnceRecordsPublisherFailureWithoutMarkingPublished(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC)
+	publishErr := errors.New("RabbitMQ confirmation timed out")
+	event := domain.PaymentEvent{
+		EventID:   uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+		EventType: domain.PaymentEventTypeCreated,
+		Payload:   []byte(`{"event_id":"22222222-2222-2222-2222-222222222222"}`),
+	}
+	repository := &fakeRelayEventRepository{events: []domain.PaymentEvent{event}}
+	publisher := &fakeRelayPublisher{err: publishErr}
+	relay := newRelayContract(t, repository, publisher, 30*time.Second, now)
+
+	err := relay.RunOnce(context.Background())
+
+	require.ErrorIs(t, err, publishErr)
+	require.Equal(t, []domain.PaymentEvent{event}, publisher.published)
+	require.Empty(t, repository.markedEvents)
+	require.Equal(t, []relayPublishFailure{{eventID: event.EventID, lastError: publishErr.Error()}}, repository.publishFailures)
+}
+
+func TestRelayRunOnceReturnsClaimErrorWithoutPublishing(t *testing.T) {
+	claimErr := errors.New("claim unavailable")
+	repository := &fakeRelayEventRepository{claimErr: claimErr}
+	publisher := &fakeRelayPublisher{}
+	relay := newRelayContract(t, repository, publisher, 30*time.Second, time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC))
+
+	err := relay.RunOnce(context.Background())
+
+	require.ErrorIs(t, err, claimErr)
+	require.Empty(t, publisher.published)
+	require.Empty(t, repository.markedEvents)
+	require.Empty(t, repository.publishFailures)
+}
+
+func TestRelayRunOnceReturnsMarkErrorAfterConfirmedPublish(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC)
+	markErr := errors.New("database unavailable while marking published")
+	event := domain.PaymentEvent{
+		EventID:   uuid.MustParse("33333333-3333-3333-3333-333333333333"),
+		EventType: domain.PaymentEventTypeCreated,
+		Payload:   []byte(`{"event_id":"33333333-3333-3333-3333-333333333333"}`),
+	}
+	repository := &fakeRelayEventRepository{
+		events:  []domain.PaymentEvent{event},
+		markErr: markErr,
+	}
+	publisher := &fakeRelayPublisher{}
+	relay := newRelayContract(t, repository, publisher, 30*time.Second, now)
+
+	err := relay.RunOnce(context.Background())
+
+	require.ErrorIs(t, err, markErr)
+	require.Equal(t, []domain.PaymentEvent{event}, publisher.published)
+	require.Equal(t, []relayMarkedEvent{{eventID: event.EventID, publishedAt: now}}, repository.markedEvents)
+	require.Empty(t, repository.publishFailures)
+}
+
+func TestRelayRunOnceReturnsRecordFailureErrorWithoutMarkingPublished(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 8, 30, 0, 0, time.UTC)
+	publishErr := errors.New("publisher channel closed")
+	recordErr := errors.New("database unavailable while recording publish failure")
+	event := domain.PaymentEvent{
+		EventID:   uuid.MustParse("44444444-4444-4444-4444-444444444444"),
+		EventType: domain.PaymentEventTypeCreated,
+		Payload:   []byte(`{"event_id":"44444444-4444-4444-4444-444444444444"}`),
+	}
+	repository := &fakeRelayEventRepository{
+		events:           []domain.PaymentEvent{event},
+		recordFailureErr: recordErr,
+	}
+	publisher := &fakeRelayPublisher{err: publishErr}
+	relay := newRelayContract(t, repository, publisher, 30*time.Second, now)
+
+	err := relay.RunOnce(context.Background())
+
+	require.ErrorIs(t, err, publishErr)
+	require.ErrorIs(t, err, recordErr)
+	require.Equal(t, []domain.PaymentEvent{event}, publisher.published)
+	require.Empty(t, repository.markedEvents)
+	require.Equal(t, []relayPublishFailure{{eventID: event.EventID, lastError: publishErr.Error()}}, repository.publishFailures)
+}
