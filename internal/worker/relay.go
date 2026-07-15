@@ -24,15 +24,38 @@ type Relay struct {
 	eventsRepo PaymentEventRepository
 	publisher  PaymentEventPublisher
 	claimLease time.Duration
+	idleDelay  time.Duration
 	now        func() time.Time
+	wait       func(context.Context, time.Duration) error
 }
 
-func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, claimLease time.Duration) *Relay {
+func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, claimLease, idleDelay time.Duration) *Relay {
 	return &Relay{
 		eventsRepo: events,
 		publisher:  publisher,
 		claimLease: claimLease,
+		idleDelay:  idleDelay,
 		now:        func() time.Time { return time.Now().UTC() },
+		wait:       waitForRelayIdle,
+	}
+}
+
+func waitForRelayIdle(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -63,5 +86,12 @@ func (r *Relay) RunOnce(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+// Run immediately attempts one relay pass, then waits idleDelay before each
+// later pass. A pass error does not permanently stop polling. Run stops without
+// starting more work when ctx is canceled and returns the context error.
+func (r *Relay) Run(ctx context.Context) error {
 	return nil
 }
