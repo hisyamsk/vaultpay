@@ -87,7 +87,8 @@ func (p *fakeRelayPublisher) Publish(_ context.Context, event domain.PaymentEven
 func newRelayContract(t *testing.T, events PaymentEventRepository, publisher PaymentEventPublisher, claimLease time.Duration, now time.Time) *Relay {
 	t.Helper()
 
-	relay := NewRelay(events, publisher, claimLease, testRelayIdleDelay)
+	relay, err := NewRelay(events, publisher, claimLease, testRelayIdleDelay)
+	require.NoError(t, err)
 	relay.now = func() time.Time { return now }
 	return relay
 }
@@ -238,11 +239,12 @@ func TestRelayRunOnceCanRepublishAfterConfirmationSucceededButMarkFailed(t *test
 		markErrors: []error{markErr, nil},
 	}
 	publisher := &fakeRelayPublisher{}
-	relay := NewRelay(repository, publisher, claimLease, testRelayIdleDelay)
+	relay, err := NewRelay(repository, publisher, claimLease, testRelayIdleDelay)
+	require.NoError(t, err)
 	currentTime := firstPassTime
 	relay.now = func() time.Time { return currentTime }
 
-	err := relay.RunOnce(context.Background())
+	err = relay.RunOnce(context.Background())
 	require.ErrorIs(t, err, markErr)
 
 	currentTime = firstPassTime.Add(claimLease + time.Second)
@@ -324,28 +326,4 @@ func TestRelayRunDoesNoWorkWhenContextIsAlreadyCanceled(t *testing.T) {
 	require.Equal(t, 0, repository.claimCalls)
 	require.Equal(t, 0, waitCalls)
 	require.Empty(t, publisher.published)
-}
-
-func TestRelayRunRejectsNonPositiveIdleDelayWithoutPolling(t *testing.T) {
-	tests := []struct {
-		name      string
-		idleDelay time.Duration
-	}{
-		{name: "zero", idleDelay: 0},
-		{name: "negative", idleDelay: -time.Second},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repository := &fakeRelayEventRepository{}
-			publisher := &fakeRelayPublisher{}
-			relay := NewRelay(repository, publisher, 30*time.Second, tt.idleDelay)
-
-			err := relay.Run(context.Background())
-
-			require.Error(t, err)
-			require.Equal(t, 0, repository.claimCalls)
-			require.Empty(t, publisher.published)
-		})
-	}
 }

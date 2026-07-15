@@ -29,7 +29,14 @@ type Relay struct {
 	wait       func(context.Context, time.Duration) error
 }
 
-func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, claimLease, idleDelay time.Duration) *Relay {
+func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, claimLease, idleDelay time.Duration) (*Relay, error) {
+	if claimLease <= 0 {
+		return nil, fmt.Errorf("relay claim lease must be positive")
+	}
+	if idleDelay <= 0 {
+		return nil, fmt.Errorf("relay idle delay must be positive")
+	}
+
 	return &Relay{
 		eventsRepo: events,
 		publisher:  publisher,
@@ -37,7 +44,7 @@ func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, cl
 		idleDelay:  idleDelay,
 		now:        func() time.Time { return time.Now().UTC() },
 		wait:       waitForRelayIdle,
-	}
+	}, nil
 }
 
 func waitForRelayIdle(ctx context.Context, delay time.Duration) error {
@@ -93,5 +100,17 @@ func (r *Relay) RunOnce(ctx context.Context) error {
 // later pass. A pass error does not permanently stop polling. Run stops without
 // starting more work when ctx is canceled and returns the context error.
 func (r *Relay) Run(ctx context.Context) error {
-	return nil
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if err := r.RunOnce(ctx); err != nil {
+			// Log the error, then continue polling.
+		}
+
+		if err := r.wait(ctx, r.idleDelay); err != nil {
+			return err
+		}
+	}
 }

@@ -52,7 +52,7 @@ Gate: queues, bindings, retry path, and DLQ can be inspected in a running local 
 - [x] Treat broker rejection, timeout, channel closure, and connection errors as failed publication.
 - [x] Mark an event published only after receiving a positive confirmation.
 - [x] Record an error and leave the event unpublished for every failed or unknown confirmation result.
-- [ ] Poll in small batches with a bounded idle delay and stop promptly on context cancellation.
+- [x] Poll in small batches with a bounded idle delay and stop promptly on context cancellation.
 - [ ] Log `event_id`, `payment_id`, `event_type`, `publish_attempts`, result, error, and duration.
 
 Tests:
