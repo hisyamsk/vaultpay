@@ -82,6 +82,11 @@ When the user asks for a TDD contract:
 - Give each test a behavior-focused name and keep its setup small enough that a
   failure has one clear cause. Shared helpers may remove fixture noise but must not
   hide the action or assertions being tested.
+- Before creating a new test, check whether an existing test already covers the
+  same success path or failure scenario. When the new contract only adds assertions
+  to that scenario, extend the existing test instead of creating a near-duplicate.
+  Create a separate test only when it protects a distinct behavior, boundary, or
+  failure point with a different clear cause.
 - Do not add speculative cases unrelated to the current contract merely to increase
   test count. Every test must protect a stated requirement, invariant, or realistic
   failure scenario.
