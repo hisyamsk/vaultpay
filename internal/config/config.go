@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -13,6 +14,7 @@ type Config struct {
 	RabbitMQURL            string
 	RabbitMQDialTimeout    time.Duration
 	RabbitMQPublishTimeout time.Duration
+	RabbitMQMaxAttempts    int
 }
 
 func LoadConfig() (Config, error) {
@@ -36,6 +38,10 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	rabbitMQMaxAttempts, err := loadPositiveInt("RABBITMQ_MAX_ATTEMPTS")
+	if err != nil {
+		return Config{}, err
+	}
 
 	config := Config{
 		HttpAddr:               httpAddr,
@@ -43,6 +49,7 @@ func LoadConfig() (Config, error) {
 		RabbitMQURL:            rabbitMQURL,
 		RabbitMQDialTimeout:    rabbitMQDialTimeout,
 		RabbitMQPublishTimeout: rabbitMQPublishTimeout,
+		RabbitMQMaxAttempts:    rabbitMQMaxAttempts,
 	}
 
 	return config, nil
@@ -63,4 +70,24 @@ func loadPositiveDuration(name string) (time.Duration, error) {
 	}
 
 	return duration, nil
+}
+
+func loadPositiveInt(name string) (int, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0, fmt.Errorf("missing %s env variable", name)
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s env variable: %w", name, err)
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf(
+			"invalid %s env variable: must be greater than zero",
+			name,
+		)
+	}
+
+	return value, nil
 }

@@ -90,7 +90,7 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 ## Wire The Fraud RabbitMQ Consumer
 
 - [x] Keep the existing fraud handler independent from RabbitMQ delivery types.
-- [ ] Add a positive maximum-attempt setting shared by the fraud and processor consumers.
+- [x] Add a positive maximum-attempt setting shared by the fraud and processor consumers.
 - [ ] Decode and validate `event_id`, `event_type`, `payment_id`, `attempt`, and `occurred_at` at the adapter boundary.
 - [ ] Accept only `payment.created` on the fraud consumer.
 - [ ] Configure the fraud consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
