@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
@@ -139,6 +140,85 @@ func scanPayment(row pgx.Row) (*domain.Payment, error) {
 	}
 
 	return payment, nil
+}
+
+// RejectPendingPayment locks paymentID and, when it is pending, changes it to
+// rejected and inserts one payment.rejected outbox event in the same
+// transaction. A payment already in any non-pending state is returned as a
+// successful no-op without another event. Missing payments return
+// ErrPaymentNotFound. Any failure rolls back both the status and event writes.
+func (r *PaymentRepository) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	payment, err := scanPayment(tx.QueryRow(ctx, `
+		SELECT id, amount, sender_id, receiver_id, idempotency_key,
+			status, error_code, description, created_at, updated_at
+		FROM payments
+		WHERE id = $1
+		FOR UPDATE
+  `, paymentID))
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPaymentNotFound
+		}
+
+		return nil, err
+	}
+
+	switch payment.Status {
+	case domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusProcessing, domain.PaymentStatusRejected:
+		return payment, nil
+	case domain.PaymentStatusPending:
+		var updatedAt time.Time
+		err = tx.QueryRow(ctx, `
+			UPDATE payments
+			SET status = $1, updated_at = NOW()
+			WHERE id = $2
+			RETURNING updated_at
+		`, domain.PaymentStatusRejected, paymentID).Scan(&updatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		eventID, err := uuid.NewV7()
+		if err != nil {
+			return nil, err
+		}
+		payload, err := json.Marshal(domain.PaymentEventPayload{
+			EventID:    eventID,
+			EventType:  domain.PaymentEventTypeRejected,
+			PaymentID:  payment.ID,
+			Attempt:    1,
+			OccurredAt: updatedAt,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO payment_events(event_id, payment_id, event_type, payload)
+			VALUES($1, $2, $3, $4)
+		`, eventID, paymentID, domain.PaymentEventTypeRejected, payload)
+		if err != nil {
+			return nil, err
+		}
+
+		err = tx.Commit(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		payment.UpdatedAt = updatedAt
+		payment.Status = domain.PaymentStatusRejected
+		return payment, nil
+	}
+
+	return nil, ErrUnrecognizedPaymentStatus
 }
 
 func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {

@@ -69,9 +69,9 @@ Gate: committed `payment.created` events reach the fraud queue and are marked pu
 ## Make Every Fraud Result Atomic With Its Next Event
 
 - [ ] Replace fraud rejection's separate read/update calls with one repository transaction.
-- [ ] Lock the payment row before deciding whether rejection may be applied.
-- [ ] For a pending payment, set `rejected` and insert `payment.rejected` in the same transaction.
-- [ ] Treat a non-pending payment as a successful no-op without inserting another event.
+- [x] Lock the payment row before deciding whether rejection may be applied.
+- [x] For a pending payment, set `rejected` and insert `payment.rejected` in the same transaction.
+- [x] Treat a non-pending payment as a successful no-op without inserting another event.
 - [ ] In `StartApprovedPaymentProcessing`, insert `payment.processing` in the same transaction as sender debit, debit ledger entry, and status update.
 - [ ] When funds are insufficient, insert `payment.failed` in the same transaction as the failed status and error code.
 - [ ] Ensure duplicate fraud work creates neither a second debit nor a second next event.
@@ -79,11 +79,11 @@ Gate: committed `payment.created` events reach the fraud queue and are marked pu
 
 Tests:
 
-- [ ] Rejection and `payment.rejected` roll back together when either write fails.
+- [x] Rejection and `payment.rejected` roll back together when either write fails.
 - [ ] Approval, debit, ledger entry, processing status, and `payment.processing` roll back together.
 - [ ] Insufficient-funds status and `payment.failed` roll back together.
 - [ ] Duplicate approval keeps one debit entry, one balance deduction, and one processing event.
-- [ ] Duplicate rejection keeps one rejected event.
+- [x] Duplicate rejection keeps one rejected event.
 
 Gate: every fraud-caused payment mutation has exactly one matching committed outbox event.
 
