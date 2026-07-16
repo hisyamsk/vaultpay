@@ -10,11 +10,6 @@ import (
 	"github.com/hisyamsk/vaultpay/internal/domain"
 )
 
-type PaymentMessage struct {
-	PaymentID uuid.UUID `json:"payment_id"`
-	Attempt   int       `json:"attempt"`
-}
-
 type PaymentEventMessage struct {
 	EventID    uuid.UUID               `json:"event_id"`
 	EventType  domain.PaymentEventType `json:"event_type"`

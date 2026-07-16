@@ -79,17 +79,6 @@ func newTestFraudWorker(t *testing.T, svc *fakePaymentService, checker *fakeFrau
 	)
 }
 
-func TestFraudWorkerHandleMessageDropsInvalidPaymentID(t *testing.T) {
-	worker := newTestFraudWorker(t, nil, nil)
-
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
-		PaymentID: uuid.Nil,
-		Attempt:   1,
-	})
-
-	require.NoError(t, err)
-}
-
 func TestFraudWorkerHandleMessageDropsMissingPayment(t *testing.T) {
 	paymentID := uuid.New()
 	worker := newTestFraudWorker(t, &fakePaymentService{
@@ -100,7 +89,7 @@ func TestFraudWorkerHandleMessageDropsMissingPayment(t *testing.T) {
 		},
 	}, nil)
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -119,7 +108,7 @@ func TestFraudWorkerHandleMessageReturnsFindPaymentErrorForRetry(t *testing.T) {
 		},
 	}, nil)
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -152,7 +141,7 @@ func TestFraudWorkerHandleMessageSkipsNonPendingPayment(t *testing.T) {
 				},
 			}, nil)
 
-			err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+			err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 				PaymentID: paymentID,
 				Attempt:   1,
 			})
@@ -192,7 +181,7 @@ func TestFraudWorkerHandleMessageApprovedPaymentStartsProcessing(t *testing.T) {
 		},
 	})
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -232,7 +221,7 @@ func TestFraudWorkerHandleMessageRejectedPaymentRejectsPendingPayment(t *testing
 		},
 	})
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -262,7 +251,7 @@ func TestFraudWorkerHandleMessageReturnsFraudCheckerErrorForRetry(t *testing.T) 
 		},
 	})
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -294,7 +283,7 @@ func TestFraudWorkerHandleMessageReturnsRejectErrorForRetry(t *testing.T) {
 		},
 	})
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -331,7 +320,7 @@ func TestFraudWorkerHandleMessageLogsAuthoritativeRejectionStatus(t *testing.T) 
 	}
 	worker := NewFraudWorker(service, checker, logger)
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -369,7 +358,7 @@ func TestFraudWorkerHandleMessageReturnsStartProcessingErrorForRetry(t *testing.
 		},
 	})
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})
@@ -396,7 +385,7 @@ func TestFraudWorkerHandleMessageDropsUnrecognizedFraudDecision(t *testing.T) {
 		},
 	})
 
-	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+	err := worker.HandleMessage(context.Background(), queue.PaymentEventMessage{
 		PaymentID: paymentID,
 		Attempt:   1,
 	})

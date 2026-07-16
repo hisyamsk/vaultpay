@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
 	"github.com/hisyamsk/vaultpay/internal/queue"
 	"github.com/hisyamsk/vaultpay/internal/repository"
@@ -24,15 +23,7 @@ func NewFraudWorker(s paymentService, f fraudChecker, logger *slog.Logger) *Frau
 	}
 }
 
-func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessage) error {
-	if msg.PaymentID == uuid.Nil {
-		w.logger.WarnContext(ctx, "dropping fraud message with invalid payment id",
-			slog.String("worker", "fraud"),
-			slog.Int("attempt", msg.Attempt),
-		)
-		return nil
-	}
-
+func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentEventMessage) error {
 	payment, err := w.paymentService.FindPaymentByID(ctx, msg.PaymentID)
 	if err != nil {
 		if errors.Is(err, repository.ErrPaymentNotFound) {
