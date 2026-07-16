@@ -37,3 +37,16 @@ type PaymentEventPayload struct {
 	Attempt    int              `db:"attempt" json:"attempt"`
 	OccurredAt time.Time        `db:"occurred_at" json:"occurred_at"`
 }
+
+func (t PaymentEventType) IsValid() bool {
+	switch t {
+	case PaymentEventTypeCreated,
+		PaymentEventTypeProcessing,
+		PaymentEventTypeCompleted,
+		PaymentEventTypeFailed,
+		PaymentEventTypeRejected:
+		return true
+	default:
+		return false
+	}
+}
