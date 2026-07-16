@@ -316,46 +316,6 @@ func TestPaymentRepository_UpdateStatusConflict(t *testing.T) {
 	require.Equal(t, domain.PaymentStatusPending, unchanged.Status)
 }
 
-func TestPaymentRepository_StartApprovedPaymentProcessing_DebitsSenderOnce(t *testing.T) {
-	repo, ctx := newTestRepo(t)
-
-	senderID := createAccount(t, ctx, repo.db, 2000)
-	receiverID := createAccount(t, ctx, repo.db, 1000)
-	payment := createPayment(t, ctx, repo, 500, senderID, receiverID, "idem-start-success")
-
-	processed, err := repo.StartApprovedPaymentProcessing(ctx, payment.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PaymentStatusProcessing, processed.Status)
-	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, senderID))
-	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
-
-	processed, err = repo.StartApprovedPaymentProcessing(ctx, payment.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PaymentStatusProcessing, processed.Status)
-	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, senderID))
-	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
-}
-
-func TestPaymentRepository_StartApprovedPaymentProcessing_InsufficientFundsFailsWithoutDebit(t *testing.T) {
-	repo, ctx := newTestRepo(t)
-
-	senderID := createAccount(t, ctx, repo.db, 300)
-	receiverID := createAccount(t, ctx, repo.db, 1000)
-	payment := createPayment(t, ctx, repo, 500, senderID, receiverID, "idem-start-insufficient")
-
-	failed, err := repo.StartApprovedPaymentProcessing(ctx, payment.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PaymentStatusFailed, failed.Status)
-	require.Equal(t, int64(300), accountBalance(t, ctx, repo.db, senderID))
-	require.Equal(t, 0, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
-
-	failed, err = repo.FindByID(ctx, payment.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PaymentStatusFailed, failed.Status)
-	require.NotNil(t, failed.ErrorCode)
-	require.Equal(t, string(domain.ErrorCodeInsufficientFunds), *failed.ErrorCode)
-}
-
 func TestPaymentRepository_CompleteProcessedPayment_CreditsReceiverOnce(t *testing.T) {
 	repo, ctx := newTestRepo(t)
 

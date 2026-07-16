@@ -242,6 +242,17 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 		return nil, err
 	}
 
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return nil, err
+	}
+
+	payload := domain.PaymentEventPayload{
+		EventID:   eventID,
+		PaymentID: payment.ID,
+		Attempt:   1,
+	}
+
 	switch payment.Status {
 	case domain.PaymentStatusProcessing, domain.PaymentStatusCompleted, domain.PaymentStatusFailed, domain.PaymentStatusRejected:
 		return payment, nil
@@ -280,6 +291,22 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 					return nil, err
 				}
 
+				payload.OccurredAt = payment.UpdatedAt
+				payload.EventType = domain.PaymentEventTypeFailed
+
+				jsonPayload, err := json.Marshal(payload)
+				if err != nil {
+					return nil, err
+				}
+
+				_, err = tx.Exec(ctx, `
+					INSERT INTO payment_events (event_id, payment_id, event_type, payload)
+					VALUES ($1, $2, $3, $4)
+				`, eventID, paymentID, domain.PaymentEventTypeFailed, jsonPayload)
+				if err != nil {
+					return nil, err
+				}
+
 				if err := tx.Commit(ctx); err != nil {
 					return nil, err
 				}
@@ -304,6 +331,21 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 			RETURNING id, amount, sender_id, receiver_id, idempotency_key, status, error_code, description, created_at, updated_at
 		`, domain.PaymentStatusProcessing, paymentID))
 
+		if err != nil {
+			return nil, err
+		}
+
+		payload.OccurredAt = payment.UpdatedAt
+		payload.EventType = domain.PaymentEventTypeProcessing
+		jsonPayload, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO payment_events (event_id, payment_id, event_type, payload)
+			VALUES ($1, $2, $3, $4)
+		`, eventID, paymentID, domain.PaymentEventTypeProcessing, jsonPayload)
 		if err != nil {
 			return nil, err
 		}
