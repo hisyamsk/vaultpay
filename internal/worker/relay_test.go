@@ -87,7 +87,7 @@ func (p *fakeRelayPublisher) Publish(_ context.Context, event domain.PaymentEven
 func newRelayContract(t *testing.T, events PaymentEventRepository, publisher PaymentEventPublisher, claimLease time.Duration, now time.Time) *Relay {
 	t.Helper()
 
-	relay, err := NewRelay(events, publisher, claimLease, testRelayIdleDelay)
+	relay, err := NewRelay(events, publisher, claimLease, testRelayIdleDelay, nil)
 	require.NoError(t, err)
 	relay.now = func() time.Time { return now }
 	return relay
@@ -239,7 +239,7 @@ func TestRelayRunOnceCanRepublishAfterConfirmationSucceededButMarkFailed(t *test
 		markErrors: []error{markErr, nil},
 	}
 	publisher := &fakeRelayPublisher{}
-	relay, err := NewRelay(repository, publisher, claimLease, testRelayIdleDelay)
+	relay, err := NewRelay(repository, publisher, claimLease, testRelayIdleDelay, nil)
 	require.NoError(t, err)
 	currentTime := firstPassTime
 	relay.now = func() time.Time { return currentTime }

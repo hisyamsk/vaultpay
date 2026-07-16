@@ -65,25 +65,17 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req CreatePaymentReq
 
 }
 
-func (s *PaymentService) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) error {
+func (s *PaymentService) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 	if paymentID == uuid.Nil {
-		return ErrInvalidPaymentID
+		return nil, ErrInvalidPaymentID
 	}
 
-	payment, err := s.repo.FindByID(ctx, paymentID)
+	payment, err := s.repo.RejectPendingPayment(ctx, paymentID)
 	if err != nil {
-		return fmt.Errorf("find payment by id: %w", err)
+		return nil, fmt.Errorf("reject pending payment: %w", err)
 	}
 
-	if payment.Status != domain.PaymentStatusPending {
-		return ErrInvalidPaymentStatusTransition
-	}
-
-	if err := s.repo.UpdateStatus(ctx, paymentID, domain.PaymentStatusPending, domain.PaymentStatusRejected); err != nil {
-		return fmt.Errorf("reject pending payment: %w", err)
-	}
-
-	return nil
+	return payment, nil
 }
 
 func (s *PaymentService) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {

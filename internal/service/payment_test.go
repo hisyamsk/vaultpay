@@ -16,6 +16,7 @@ type fakePaymentRepository struct {
 	findFn                           func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
 	findByIDFn                       func(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	updateStatusFn                   func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error
+	rejectPendingPaymentFn           func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	startApprovedPaymentProcessingFn func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	completeProcessedPaymentFn       func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	failProcessedPaymentFn           func(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error)
@@ -47,6 +48,13 @@ func (f fakePaymentRepository) UpdateStatus(ctx context.Context, id uuid.UUID, f
 		return errors.New("unexpected update status call")
 	}
 	return f.updateStatusFn(ctx, id, fromStatus, toStatus)
+}
+
+func (f fakePaymentRepository) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+	if f.rejectPendingPaymentFn == nil {
+		return nil, errors.New("unexpected reject pending payment call")
+	}
+	return f.rejectPendingPaymentFn(ctx, paymentID)
 }
 
 func (f fakePaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
@@ -307,91 +315,64 @@ func TestCreatePaymentWrapsFindByIdempotencyKeyErrors(t *testing.T) {
 	}
 }
 
-func TestRejectPendingPaymentRejectsPendingPayment(t *testing.T) {
+func TestRejectPendingPaymentReturnsRepositoryResult(t *testing.T) {
 	paymentID := uuid.New()
+	expected := &domain.Payment{ID: paymentID, Status: domain.PaymentStatusRejected}
 
 	svc := NewPaymentService(fakePaymentRepository{
-		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
-			if id != paymentID {
-				t.Fatalf("expected payment ID %s, got %s", paymentID, id)
-			}
-			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusPending}, nil
-		},
-		updateStatusFn: func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
-			if id != paymentID {
-				t.Fatalf("expected payment ID %s, got %s", paymentID, id)
-			}
-			if fromStatus != domain.PaymentStatusPending {
-				t.Fatalf("expected from status %s, got %s", domain.PaymentStatusPending, fromStatus)
-			}
-			if toStatus != domain.PaymentStatusRejected {
-				t.Fatalf("expected to status %s, got %s", domain.PaymentStatusRejected, toStatus)
-			}
-			return nil
+		rejectPendingPaymentFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			require.Equal(t, paymentID, id)
+			return expected, nil
 		},
 	})
 
-	if err := svc.RejectPendingPayment(context.Background(), paymentID); err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
+	payment, err := svc.RejectPendingPayment(context.Background(), paymentID)
+
+	require.NoError(t, err)
+	require.Same(t, expected, payment)
 }
 
-func TestRejectPendingPaymentRejectsNonPendingPayment(t *testing.T) {
+func TestRejectPendingPaymentReturnsRepositoryNonPendingNoOp(t *testing.T) {
 	paymentID := uuid.New()
-	calledUpdate := false
+	expected := &domain.Payment{ID: paymentID, Status: domain.PaymentStatusCompleted}
 
 	svc := NewPaymentService(fakePaymentRepository{
-		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
-			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusCompleted}, nil
-		},
-		updateStatusFn: func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
-			calledUpdate = true
-			return nil
+		rejectPendingPaymentFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			require.Equal(t, paymentID, id)
+			return expected, nil
 		},
 	})
 
-	err := svc.RejectPendingPayment(context.Background(), paymentID)
-	if !errors.Is(err, ErrInvalidPaymentStatusTransition) {
-		t.Fatalf("expected error %v, got %v", ErrInvalidPaymentStatusTransition, err)
-	}
-	if calledUpdate {
-		t.Fatal("expected repository update not to be called")
-	}
+	payment, err := svc.RejectPendingPayment(context.Background(), paymentID)
+
+	require.NoError(t, err)
+	require.Same(t, expected, payment)
 }
 
-func TestRejectPendingPaymentWrapsFindByIDErrors(t *testing.T) {
-	paymentID := uuid.New()
-	findErr := errors.New("lookup failed")
+func TestRejectPendingPaymentRejectsEmptyPaymentID(t *testing.T) {
+	svc := NewPaymentService(fakePaymentRepository{})
 
-	svc := NewPaymentService(fakePaymentRepository{
-		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
-			return nil, findErr
-		},
-	})
+	payment, err := svc.RejectPendingPayment(context.Background(), uuid.Nil)
 
-	err := svc.RejectPendingPayment(context.Background(), paymentID)
-	if !errors.Is(err, findErr) {
-		t.Fatalf("expected error to wrap %v, got %v", findErr, err)
-	}
+	require.Nil(t, payment)
+	require.ErrorIs(t, err, ErrInvalidPaymentID)
 }
 
-func TestRejectPendingPaymentWrapsUpdateStatusErrors(t *testing.T) {
+func TestRejectPendingPaymentWrapsRepositoryError(t *testing.T) {
 	paymentID := uuid.New()
-	updateErr := errors.New("update failed")
+	repositoryErr := errors.New("atomic rejection failed")
 
 	svc := NewPaymentService(fakePaymentRepository{
-		findByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
-			return &domain.Payment{ID: paymentID, Status: domain.PaymentStatusPending}, nil
-		},
-		updateStatusFn: func(ctx context.Context, id uuid.UUID, fromStatus domain.PaymentStatus, toStatus domain.PaymentStatus) error {
-			return updateErr
+		rejectPendingPaymentFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			require.Equal(t, paymentID, id)
+			return nil, repositoryErr
 		},
 	})
 
-	err := svc.RejectPendingPayment(context.Background(), paymentID)
-	if !errors.Is(err, updateErr) {
-		t.Fatalf("expected error to wrap %v, got %v", updateErr, err)
-	}
+	payment, err := svc.RejectPendingPayment(context.Background(), paymentID)
+
+	require.Nil(t, payment)
+	require.ErrorIs(t, err, repositoryErr)
 }
 
 func TestFindPaymentByID(t *testing.T) {

@@ -17,6 +17,7 @@ type paymentRepository interface {
 	StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error)
+	RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 }
 
 var (

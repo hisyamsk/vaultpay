@@ -68,7 +68,7 @@ Gate: committed `payment.created` events reach the fraud queue and are marked pu
 
 ## Make Every Fraud Result Atomic With Its Next Event
 
-- [ ] Replace fraud rejection's separate read/update calls with one repository transaction.
+- [x] Replace fraud rejection's separate read/update calls with one repository transaction.
 - [x] Lock the payment row before deciding whether rejection may be applied.
 - [x] For a pending payment, set `rejected` and insert `payment.rejected` in the same transaction.
 - [x] Treat a non-pending payment as a successful no-op without inserting another event.
