@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,16 +26,20 @@ type Relay struct {
 	publisher  PaymentEventPublisher
 	claimLease time.Duration
 	idleDelay  time.Duration
+	logger     *slog.Logger
 	now        func() time.Time
 	wait       func(context.Context, time.Duration) error
 }
 
-func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, claimLease, idleDelay time.Duration) (*Relay, error) {
+func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, claimLease, idleDelay time.Duration, logger *slog.Logger) (*Relay, error) {
 	if claimLease <= 0 {
 		return nil, fmt.Errorf("relay claim lease must be positive")
 	}
 	if idleDelay <= 0 {
 		return nil, fmt.Errorf("relay idle delay must be positive")
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	return &Relay{
@@ -42,6 +47,7 @@ func NewRelay(events PaymentEventRepository, publisher PaymentEventPublisher, cl
 		publisher:  publisher,
 		claimLease: claimLease,
 		idleDelay:  idleDelay,
+		logger:     logger,
 		now:        func() time.Time { return time.Now().UTC() },
 		wait:       waitForRelayIdle,
 	}, nil
@@ -72,28 +78,58 @@ func (r *Relay) RunOnce(ctx context.Context) error {
 
 	unpublishedEvents, err := r.eventsRepo.ClaimUnpublished(ctx, leaseExpiredBefore)
 	if err != nil {
+		r.logger.ErrorContext(ctx, "relay failed to claim unpublished events",
+			slog.String("result", "failed"),
+			slog.Any("error", err),
+			slog.Duration("duration", r.now().Sub(now)),
+		)
 		return fmt.Errorf("relay claim unpublished events: %w", err)
 	}
 
 	for _, event := range unpublishedEvents {
+		startedAt := r.now()
 		err := r.publisher.Publish(ctx, event)
 		if err != nil {
 			dbErr := r.eventsRepo.RecordPublishFailure(ctx, event.EventID, err.Error())
 
 			if dbErr != nil {
-				return fmt.Errorf("relay publish and record failure: %w", errors.Join(dbErr, err))
+				combinedErr := errors.Join(dbErr, err)
+				r.logEventResult(ctx, event, "failed", combinedErr, startedAt)
+				return fmt.Errorf("relay publish and record failure: %w", combinedErr)
 			}
 
+			r.logEventResult(ctx, event, "failed", err, startedAt)
 			return fmt.Errorf("relay publish event: %w", err)
 		}
 
 		err = r.eventsRepo.MarkPublished(ctx, event.EventID, r.now())
 		if err != nil {
+			r.logEventResult(ctx, event, "failed", err, startedAt)
 			return fmt.Errorf("relay mark published event: %w", err)
 		}
+
+		r.logEventResult(ctx, event, "published", nil, startedAt)
 	}
 
 	return nil
+}
+
+func (r *Relay) logEventResult(ctx context.Context, event domain.PaymentEvent, result string, err error, startedAt time.Time) {
+	attributes := []any{
+		slog.String("event_id", event.EventID.String()),
+		slog.String("payment_id", event.PaymentID.String()),
+		slog.String("event_type", string(event.EventType)),
+		slog.Int("publish_attempts", event.PublishAttempts),
+		slog.String("result", result),
+		slog.Any("error", err),
+		slog.Duration("duration", r.now().Sub(startedAt)),
+	}
+
+	if err != nil {
+		r.logger.ErrorContext(ctx, "relay payment event publish failed", attributes...)
+		return
+	}
+	r.logger.InfoContext(ctx, "relay payment event published", attributes...)
 }
 
 // Run immediately attempts one relay pass, then waits idleDelay before each
@@ -106,7 +142,9 @@ func (r *Relay) Run(ctx context.Context) error {
 		}
 
 		if err := r.RunOnce(ctx); err != nil {
-			// Log the error, then continue polling.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 		}
 
 		if err := r.wait(ctx, r.idleDelay); err != nil {
