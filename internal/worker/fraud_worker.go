@@ -23,7 +23,7 @@ func NewFraudWorker(s paymentService, f fraudChecker, logger *slog.Logger) *Frau
 	}
 }
 
-func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentEventMessage) error {
+func (w *FraudWorker) HandleEvent(ctx context.Context, msg queue.PaymentEventMessage) error {
 	payment, err := w.paymentService.FindPaymentByID(ctx, msg.PaymentID)
 	if err != nil {
 		if errors.Is(err, repository.ErrPaymentNotFound) {

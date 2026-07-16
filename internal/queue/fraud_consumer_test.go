@@ -17,8 +17,8 @@ type fakeFraudEventHandler struct {
 	err      error
 }
 
-func (f *fakeFraudEventHandler) HandleMessage(_ context.Context, message PaymentEventMessage) error {
-	f.messages = append(f.messages, message)
+func (f *fakeFraudEventHandler) HandleEvent(_ context.Context, event PaymentEventMessage) error {
+	f.messages = append(f.messages, event)
 	return f.err
 }
 
@@ -30,7 +30,7 @@ func paymentEventBody(t *testing.T, message PaymentEventMessage) []byte {
 	return body
 }
 
-func TestFraudConsumerHandleMessagePassesCreatedEventToHandler(t *testing.T) {
+func TestFraudConsumerHandleDeliveryPassesCreatedEventToHandler(t *testing.T) {
 	expected := PaymentEventMessage{
 		EventID:    uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		EventType:  domain.PaymentEventTypeCreated,
@@ -41,23 +41,23 @@ func TestFraudConsumerHandleMessagePassesCreatedEventToHandler(t *testing.T) {
 	handler := &fakeFraudEventHandler{}
 	consumer := NewFraudConsumer(handler)
 
-	err := consumer.HandleMessage(context.Background(), paymentEventBody(t, expected))
+	err := consumer.HandleDelivery(context.Background(), paymentEventBody(t, expected))
 
 	require.NoError(t, err)
 	require.Equal(t, []PaymentEventMessage{expected}, handler.messages)
 }
 
-func TestFraudConsumerHandleMessageRejectsInvalidBodyBeforeCallingHandler(t *testing.T) {
+func TestFraudConsumerHandleDeliveryRejectsInvalidBodyBeforeCallingHandler(t *testing.T) {
 	handler := &fakeFraudEventHandler{}
 	consumer := NewFraudConsumer(handler)
 
-	err := consumer.HandleMessage(context.Background(), []byte(`{`))
+	err := consumer.HandleDelivery(context.Background(), []byte(`{`))
 
 	require.ErrorIs(t, err, ErrInvalidFraudMessage)
 	require.Empty(t, handler.messages)
 }
 
-func TestFraudConsumerHandleMessageRejectsNonCreatedEventsBeforeCallingHandler(t *testing.T) {
+func TestFraudConsumerHandleDeliveryRejectsNonCreatedEventsBeforeCallingHandler(t *testing.T) {
 	tests := []domain.PaymentEventType{
 		domain.PaymentEventTypeProcessing,
 		domain.PaymentEventTypeCompleted,
@@ -77,7 +77,7 @@ func TestFraudConsumerHandleMessageRejectsNonCreatedEventsBeforeCallingHandler(t
 			handler := &fakeFraudEventHandler{}
 			consumer := NewFraudConsumer(handler)
 
-			err := consumer.HandleMessage(context.Background(), paymentEventBody(t, message))
+			err := consumer.HandleDelivery(context.Background(), paymentEventBody(t, message))
 
 			require.ErrorIs(t, err, ErrInvalidFraudMessage)
 			require.Empty(t, handler.messages)
@@ -85,7 +85,7 @@ func TestFraudConsumerHandleMessageRejectsNonCreatedEventsBeforeCallingHandler(t
 	}
 }
 
-func TestFraudConsumerHandleMessageWrapsHandlerError(t *testing.T) {
+func TestFraudConsumerHandleDeliveryWrapsHandlerError(t *testing.T) {
 	handlerErr := errors.New("database unavailable")
 	handler := &fakeFraudEventHandler{err: handlerErr}
 	consumer := NewFraudConsumer(handler)
@@ -97,7 +97,7 @@ func TestFraudConsumerHandleMessageWrapsHandlerError(t *testing.T) {
 		OccurredAt: time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC),
 	}
 
-	err := consumer.HandleMessage(context.Background(), paymentEventBody(t, message))
+	err := consumer.HandleDelivery(context.Background(), paymentEventBody(t, message))
 
 	require.ErrorIs(t, err, handlerErr)
 	require.NotErrorIs(t, err, ErrInvalidFraudMessage)
