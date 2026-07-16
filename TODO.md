@@ -75,7 +75,7 @@ Gate: committed `payment.created` events reach the fraud queue and are marked pu
 - [ ] In `StartApprovedPaymentProcessing`, insert `payment.processing` in the same transaction as sender debit, debit ledger entry, and status update.
 - [ ] When funds are insufficient, insert `payment.failed` in the same transaction as the failed status and error code.
 - [ ] Ensure duplicate fraud work creates neither a second debit nor a second next event.
-- [ ] Return enough information for the worker to log the resulting status.
+- [x] Return enough information for the worker to log the resulting status.
 
 Tests:
 

@@ -23,7 +23,7 @@ const (
 
 type paymentService interface {
 	FindPaymentByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
-	RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) error
+	RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	StartApprovedPaymentProcessing(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 }
 

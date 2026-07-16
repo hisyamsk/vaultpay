@@ -74,9 +74,10 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 		return fmt.Errorf("fraud worker handle message: %w", err)
 	}
 
+	resultPayment := payment
 	switch fraudDecision {
 	case FraudDecisionRejected:
-		err = w.paymentService.RejectPendingPayment(ctx, payment.ID)
+		resultPayment, err = w.paymentService.RejectPendingPayment(ctx, payment.ID)
 		if err != nil {
 			w.logger.ErrorContext(ctx, "failed to reject fraud-flagged payment",
 				slog.String("worker", "fraud"),
@@ -88,7 +89,7 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 			return fmt.Errorf("fraud worker handle message: %w", err)
 		}
 	case FraudDecisionApproved:
-		_, err = w.paymentService.StartApprovedPaymentProcessing(ctx, payment.ID)
+		resultPayment, err = w.paymentService.StartApprovedPaymentProcessing(ctx, payment.ID)
 		if err != nil {
 			w.logger.ErrorContext(ctx, "failed to start approved payment processing",
 				slog.String("worker", "fraud"),
@@ -109,11 +110,16 @@ func (w *FraudWorker) HandleMessage(ctx context.Context, msg queue.PaymentMessag
 		return nil
 	}
 
+	if resultPayment == nil {
+		return fmt.Errorf("fraud worker handle message: payment service returned nil payment")
+	}
+
 	w.logger.InfoContext(ctx, "handled fraud message",
 		slog.String("worker", "fraud"),
-		slog.String("payment_id", payment.ID.String()),
+		slog.String("payment_id", resultPayment.ID.String()),
 		slog.Int("attempt", msg.Attempt),
 		slog.String("decision", string(fraudDecision)),
+		slog.String("status", string(resultPayment.Status)),
 	)
 	return nil
 }

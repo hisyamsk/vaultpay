@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -18,7 +20,7 @@ type fakePaymentService struct {
 	t *testing.T
 
 	findPaymentByIDFn                func(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
-	rejectPendingPaymentFn           func(ctx context.Context, paymentID uuid.UUID) error
+	rejectPendingPaymentFn           func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 	startApprovedPaymentProcessingFn func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
 }
 
@@ -30,7 +32,7 @@ func (f *fakePaymentService) FindPaymentByID(ctx context.Context, id uuid.UUID) 
 	return f.findPaymentByIDFn(ctx, id)
 }
 
-func (f *fakePaymentService) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) error {
+func (f *fakePaymentService) RejectPendingPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 	f.t.Helper()
 	if f.rejectPendingPaymentFn == nil {
 		f.t.Fatalf("unexpected RejectPendingPayment call")
@@ -215,9 +217,12 @@ func TestFraudWorkerHandleMessageRejectedPaymentRejectsPendingPayment(t *testing
 			require.Equal(t, paymentID, id)
 			return payment, nil
 		},
-		rejectPendingPaymentFn: func(ctx context.Context, paymentID uuid.UUID) error {
+		rejectPendingPaymentFn: func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
 			rejectedPaymentID = paymentID
-			return nil
+			return &domain.Payment{
+				ID:     paymentID,
+				Status: domain.PaymentStatusRejected,
+			}, nil
 		},
 	}, &fakeFraudChecker{
 		t: t,
@@ -277,9 +282,9 @@ func TestFraudWorkerHandleMessageReturnsRejectErrorForRetry(t *testing.T) {
 				Status: domain.PaymentStatusPending,
 			}, nil
 		},
-		rejectPendingPaymentFn: func(ctx context.Context, gotPaymentID uuid.UUID) error {
+		rejectPendingPaymentFn: func(ctx context.Context, gotPaymentID uuid.UUID) (*domain.Payment, error) {
 			require.Equal(t, paymentID, gotPaymentID)
-			return rejectErr
+			return nil, rejectErr
 		},
 	}, &fakeFraudChecker{
 		t: t,
@@ -295,6 +300,49 @@ func TestFraudWorkerHandleMessageReturnsRejectErrorForRetry(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, rejectErr)
+}
+
+func TestFraudWorkerHandleMessageLogsAuthoritativeRejectionStatus(t *testing.T) {
+	paymentID := uuid.New()
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	service := &fakePaymentService{
+		t: t,
+		findPaymentByIDFn: func(context.Context, uuid.UUID) (*domain.Payment, error) {
+			return &domain.Payment{
+				ID:     paymentID,
+				Status: domain.PaymentStatusPending,
+			}, nil
+		},
+		rejectPendingPaymentFn: func(context.Context, uuid.UUID) (*domain.Payment, error) {
+			// The repository result is authoritative because it was read while
+			// holding the payment row lock.
+			return &domain.Payment{
+				ID:     paymentID,
+				Status: domain.PaymentStatusRejected,
+			}, nil
+		},
+	}
+	checker := &fakeFraudChecker{
+		t: t,
+		checkFn: func(context.Context, *domain.Payment) (FraudDecision, error) {
+			return FraudDecisionRejected, nil
+		},
+	}
+	worker := NewFraudWorker(service, checker, logger)
+
+	err := worker.HandleMessage(context.Background(), queue.PaymentMessage{
+		PaymentID: paymentID,
+		Attempt:   1,
+	})
+
+	require.NoError(t, err)
+	var logged map[string]any
+	require.NoError(t, json.NewDecoder(&output).Decode(&logged))
+	require.Equal(t, "handled fraud message", logged["msg"])
+	require.Equal(t, paymentID.String(), logged["payment_id"])
+	require.Equal(t, string(FraudDecisionRejected), logged["decision"])
+	require.Equal(t, string(domain.PaymentStatusRejected), logged["status"])
 }
 
 func TestFraudWorkerHandleMessageReturnsStartProcessingErrorForRetry(t *testing.T) {
