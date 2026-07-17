@@ -87,7 +87,30 @@ func (c *FraudConsumer) Consume(ctx context.Context) error {
 			}
 
 			if err := c.HandleDelivery(ctx, delivery.Body); err != nil {
-				return fmt.Errorf("handle fraud delivery: %w", err)
+				if !errors.Is(err, ErrInvalidFraudMessage) {
+					// Temporary behavior until retry publication is implemented.
+					// Do not Ack transient failures.
+					return fmt.Errorf("handle fraud delivery: %w", err)
+				}
+
+				if publishErr := c.failurePublisher.PublishDeadLetter(
+					ctx,
+					delivery.Body,
+				); publishErr != nil {
+					return fmt.Errorf(
+						"publish invalid fraud message to dead-letter queue: %w",
+						publishErr,
+					)
+				}
+
+				if ackErr := delivery.Ack(false); ackErr != nil {
+					return fmt.Errorf(
+						"acknowledge dead-lettered fraud message: %w",
+						ackErr,
+					)
+				}
+
+				continue
 			}
 
 			if err := delivery.Ack(false); err != nil {

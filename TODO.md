@@ -98,7 +98,7 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 - [x] Load current payment state from PostgreSQL before running the fraud checker.
 - [x] Treat an already-applied or stale payment as a successful no-op.
 - [x] Acknowledge only after the handler's database work commits or returns a stale no-op.
-- [ ] Send malformed/permanent messages to the DLQ without retrying.
+- [x] Send malformed/permanent messages to the DLQ without retrying.
 - [ ] On a transient error, publish a copy to the retry path with `attempt + 1`, wait for confirmation, then acknowledge the original.
 - [ ] Do not acknowledge the original when retry publication is unconfirmed.
 - [ ] Stop retrying after the configured maximum attempt and send the message to the DLQ.
@@ -109,7 +109,7 @@ Tests:
 - [x] Successful database handling happens before acknowledgement.
 - [x] Database failure does not acknowledge the original message.
 - [ ] Stale duplicate delivery is acknowledged as a no-op.
-- [ ] Malformed input reaches the DLQ path.
+- [x] Malformed input reaches the DLQ path.
 - [ ] Transient failure increments `attempt` and uses the delayed retry path.
 - [ ] Exhausted retry reaches the DLQ.
 
