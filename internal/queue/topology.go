@@ -10,11 +10,11 @@ import (
 const (
 	PaymentEventsExchange = "vaultpay.payment.events"
 	PaymentRetryExchange  = "vaultpay.payment.retry"
-	PaymentDLQ            = "vaultpay.payment.dlq"
 
-	FraudQueue        = "vaultpay.fraud"
-	ProcessorQueue    = "vaultpay.processor"
-	PaymentRetryQueue = "vaultpay.payment.retry.wait"
+	FraudQueue             = "vaultpay.fraud"
+	ProcessorQueue         = "vaultpay.processor"
+	PaymentRetryQueue      = "vaultpay.payment.retry.wait"
+	PaymentDeadLetterQueue = "vaultpay.payment.dlq"
 
 	retryDelayMilliseconds int32 = 5000
 )
@@ -150,9 +150,9 @@ func DeclarePaymentRetryPath(ch *amqp.Channel) error {
 	return nil
 }
 
-func DeclarePaymentDLQ(ch *amqp.Channel) error {
+func DeclarePaymentDeadLetterQueue(ch *amqp.Channel) error {
 	_, err := ch.QueueDeclare(
-		PaymentDLQ,
+		PaymentDeadLetterQueue,
 		true,
 		false,
 		false,
@@ -161,7 +161,7 @@ func DeclarePaymentDLQ(ch *amqp.Channel) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("declare payment DLQ: %w", err)
+		return fmt.Errorf("declare payment dead-letter queue: %w", err)
 	}
 	return nil
 }
@@ -183,7 +183,7 @@ func DeclarePaymentTopology(ch *amqp.Channel) error {
 		return fmt.Errorf("declare payment topology: %w", err)
 	}
 
-	if err := DeclarePaymentDLQ(ch); err != nil {
+	if err := DeclarePaymentDeadLetterQueue(ch); err != nil {
 		return fmt.Errorf("declare payment topology: %w", err)
 	}
 

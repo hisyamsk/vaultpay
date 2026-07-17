@@ -15,20 +15,22 @@ type fraudEventHandler interface {
 }
 
 type FraudConsumer struct {
-	handler       fraudEventHandler
-	channel       consumerChannel
-	prefetchCount int
+	handler          fraudEventHandler
+	channel          consumerChannel
+	prefetchCount    int
+	failurePublisher failurePublisher
 }
 
-func NewFraudConsumer(handler fraudEventHandler, channel consumerChannel, prefetchCount int) (*FraudConsumer, error) {
+func NewFraudConsumer(handler fraudEventHandler, channel consumerChannel, prefetchCount int, failurePublisher failurePublisher) (*FraudConsumer, error) {
 	if prefetchCount <= 0 {
 		return nil, errors.New("prefetch count must be greater than zero")
 	}
 
 	return &FraudConsumer{
-		channel:       channel,
-		handler:       handler,
-		prefetchCount: prefetchCount,
+		channel:          channel,
+		handler:          handler,
+		prefetchCount:    prefetchCount,
+		failurePublisher: failurePublisher,
 	}, nil
 }
 

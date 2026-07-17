@@ -46,6 +46,16 @@ type fakeConsumerChannel struct {
 	deliveries       <-chan amqp.Delivery
 }
 
+type fakeFailurePublisher struct{}
+
+func (*fakeFailurePublisher) PublishDeadLetter(context.Context, []byte) error {
+	return nil
+}
+
+func (*fakeFailurePublisher) PublishRetry(context.Context, PaymentEventMessage) error {
+	return nil
+}
+
 func (f *fakeConsumerChannel) Qos(prefetchCount, prefetchSize int, global bool) error {
 	f.qosCalls++
 	f.qosPrefetchCount = prefetchCount
@@ -102,7 +112,7 @@ func (f *fakeAcknowledger) Reject(_ uint64, _ bool) error {
 func newTestFraudConsumer(t *testing.T, handler fraudEventHandler) *FraudConsumer {
 	t.Helper()
 
-	consumer, err := NewFraudConsumer(handler, &fakeConsumerChannel{}, 1)
+	consumer, err := NewFraudConsumer(handler, &fakeConsumerChannel{}, 1, &fakeFailurePublisher{})
 	require.NoError(t, err)
 	return consumer
 }
@@ -230,7 +240,7 @@ func TestFraudConsumerConsumeConfiguresManualConsumptionAndAcknowledgesAfterHand
 		Attempt:    1,
 		OccurredAt: time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC),
 	}
-	consumer, err := NewFraudConsumer(handler, channel, 7)
+	consumer, err := NewFraudConsumer(handler, channel, 7, &fakeFailurePublisher{})
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -275,7 +285,7 @@ func TestFraudConsumerConsumeDoesNotAcknowledgeHandlerFailure(t *testing.T) {
 		Attempt:    1,
 		OccurredAt: time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC),
 	}
-	consumer, err := NewFraudConsumer(handler, channel, 1)
+	consumer, err := NewFraudConsumer(handler, channel, 1, &fakeFailurePublisher{})
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -295,7 +305,7 @@ func TestFraudConsumerConsumeDoesNotAcknowledgeHandlerFailure(t *testing.T) {
 func TestFraudConsumerConsumeStopsWhenQoSConfigurationFails(t *testing.T) {
 	qosErr := errors.New("channel closed")
 	channel := &fakeConsumerChannel{qosErr: qosErr}
-	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1)
+	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1, &fakeFailurePublisher{})
 	require.NoError(t, err)
 
 	err = consumer.Consume(context.Background())
@@ -308,7 +318,7 @@ func TestFraudConsumerConsumeStopsWhenQoSConfigurationFails(t *testing.T) {
 func TestFraudConsumerConsumeReturnsConsumptionSetupFailure(t *testing.T) {
 	consumeErr := errors.New("consumer registration failed")
 	channel := &fakeConsumerChannel{consumeErr: consumeErr}
-	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1)
+	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1, &fakeFailurePublisher{})
 	require.NoError(t, err)
 
 	err = consumer.Consume(context.Background())

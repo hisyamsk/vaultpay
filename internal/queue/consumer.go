@@ -16,3 +16,8 @@ type consumerChannel interface {
 		args amqp.Table,
 	) (<-chan amqp.Delivery, error)
 }
+
+type failurePublisher interface {
+	PublishDeadLetter(ctx context.Context, body []byte) error
+	PublishRetry(ctx context.Context, event PaymentEventMessage) error
+}

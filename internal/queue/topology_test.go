@@ -294,14 +294,14 @@ func TestDeclarePaymentRetryPathReturnsMessagesToTheirWorkQueueAfterDelay(t *tes
 	}
 }
 
-func TestDeclarePaymentDLQCanBeRepeated(t *testing.T) {
+func TestDeclarePaymentDeadLetterQueueCanBeRepeated(t *testing.T) {
 	ch := newTestRabbitMQChannel(t)
 
-	require.NoError(t, DeclarePaymentDLQ(ch))
-	require.NoError(t, DeclarePaymentDLQ(ch))
+	require.NoError(t, DeclarePaymentDeadLetterQueue(ch))
+	require.NoError(t, DeclarePaymentDeadLetterQueue(ch))
 
 	_, err := ch.QueueDeclarePassive(
-		PaymentDLQ,
+		PaymentDeadLetterQueue,
 		true,
 		false,
 		false,
@@ -311,14 +311,14 @@ func TestDeclarePaymentDLQCanBeRepeated(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
+func TestDeclarePaymentDeadLetterQueueRetainsMessageUntilConsumed(t *testing.T) {
 	ch := newTestRabbitMQChannel(t)
-	require.NoError(t, DeclarePaymentDLQ(ch))
+	require.NoError(t, DeclarePaymentDeadLetterQueue(ch))
 
-	_, err := ch.QueuePurge(PaymentDLQ, false)
+	_, err := ch.QueuePurge(PaymentDeadLetterQueue, false)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_, err := ch.QueuePurge(PaymentDLQ, false)
+		_, err := ch.QueuePurge(PaymentDeadLetterQueue, false)
 		require.NoError(t, err)
 	})
 
@@ -327,7 +327,7 @@ func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
 
 	require.NoError(t, ch.Confirm(false))
 	body := []byte(`{"reason":"malformed"}`)
-	confirmation, err := ch.PublishWithDeferredConfirmWithContext(ctx, "", PaymentDLQ, false, false, amqp.Publishing{
+	confirmation, err := ch.PublishWithDeferredConfirmWithContext(ctx, "", PaymentDeadLetterQueue, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		Body:         body,
@@ -340,7 +340,7 @@ func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
 	require.True(t, confirmed)
 
 	dlq, err := ch.QueueDeclarePassive(
-		PaymentDLQ,
+		PaymentDeadLetterQueue,
 		true,
 		false,
 		false,
@@ -350,14 +350,14 @@ func TestDeclarePaymentDLQRetainsMessageUntilConsumed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, dlq.Messages)
 
-	delivery, ok, err := ch.Get(PaymentDLQ, false)
+	delivery, ok, err := ch.Get(PaymentDeadLetterQueue, false)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, body, delivery.Body)
 	require.NoError(t, delivery.Ack(false))
 
 	dlq, err = ch.QueueDeclarePassive(
-		PaymentDLQ,
+		PaymentDeadLetterQueue,
 		true,
 		false,
 		false,
@@ -373,15 +373,15 @@ func TestDeclarePaymentTopologyCanBeRedeclaredFromNewConnectionWithoutLosingQueu
 
 	// Remove one topology component so this test cannot pass only because a
 	// previous test or worker already declared everything.
-	require.NoError(t, DeclarePaymentDLQ(firstWorkerChannel))
-	_, err := firstWorkerChannel.QueuePurge(PaymentDLQ, false)
+	require.NoError(t, DeclarePaymentDeadLetterQueue(firstWorkerChannel))
+	_, err := firstWorkerChannel.QueuePurge(PaymentDeadLetterQueue, false)
 	require.NoError(t, err)
-	_, err = firstWorkerChannel.QueueDelete(PaymentDLQ, false, false, false)
+	_, err = firstWorkerChannel.QueueDelete(PaymentDeadLetterQueue, false, false, false)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		require.NoError(t, DeclarePaymentDLQ(firstWorkerChannel))
-		_, err := firstWorkerChannel.QueuePurge(PaymentDLQ, false)
+		require.NoError(t, DeclarePaymentDeadLetterQueue(firstWorkerChannel))
+		_, err := firstWorkerChannel.QueuePurge(PaymentDeadLetterQueue, false)
 		require.NoError(t, err)
 	})
 
@@ -392,7 +392,7 @@ func TestDeclarePaymentTopologyCanBeRedeclaredFromNewConnectionWithoutLosingQueu
 
 	require.NoError(t, firstWorkerChannel.Confirm(false))
 	body := []byte(`{"reason":"exhausted_retries"}`)
-	confirmation, err := firstWorkerChannel.PublishWithDeferredConfirmWithContext(ctx, "", PaymentDLQ, false, false, amqp.Publishing{
+	confirmation, err := firstWorkerChannel.PublishWithDeferredConfirmWithContext(ctx, "", PaymentDeadLetterQueue, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		Body:         body,
@@ -408,7 +408,7 @@ func TestDeclarePaymentTopologyCanBeRedeclaredFromNewConnectionWithoutLosingQueu
 	restartedWorkerChannel := newTestRabbitMQChannel(t)
 	require.NoError(t, DeclarePaymentTopology(restartedWorkerChannel))
 
-	delivery, ok, err := restartedWorkerChannel.Get(PaymentDLQ, false)
+	delivery, ok, err := restartedWorkerChannel.Get(PaymentDeadLetterQueue, false)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, body, delivery.Body)
