@@ -48,13 +48,37 @@ func TestFraudConsumerHandleDeliveryPassesCreatedEventToHandler(t *testing.T) {
 }
 
 func TestFraudConsumerHandleDeliveryRejectsInvalidBodyBeforeCallingHandler(t *testing.T) {
-	handler := &fakeFraudEventHandler{}
-	consumer := NewFraudConsumer(handler)
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "malformed JSON",
+			body: []byte(`{`),
+		},
+		{
+			name: "semantically invalid event",
+			body: paymentEventBody(t, PaymentEventMessage{
+				EventID:    uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+				EventType:  domain.PaymentEventTypeCreated,
+				PaymentID:  uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+				Attempt:    0,
+				OccurredAt: time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC),
+			}),
+		},
+	}
 
-	err := consumer.HandleDelivery(context.Background(), []byte(`{`))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &fakeFraudEventHandler{}
+			consumer := NewFraudConsumer(handler)
 
-	require.ErrorIs(t, err, ErrInvalidFraudMessage)
-	require.Empty(t, handler.messages)
+			err := consumer.HandleDelivery(context.Background(), tt.body)
+
+			require.ErrorIs(t, err, ErrInvalidFraudMessage)
+			require.Empty(t, handler.messages)
+		})
+	}
 }
 
 func TestFraudConsumerHandleDeliveryRejectsNonCreatedEventsBeforeCallingHandler(t *testing.T) {

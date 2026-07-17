@@ -93,7 +93,7 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 - [x] Add a positive maximum-attempt setting shared by the fraud and processor consumers.
 - [x] Decode and validate `event_id`, `event_type`, `payment_id`, `attempt`, and `occurred_at` at the adapter boundary.
 - [x] Replace the old `PaymentMessage` argument with `PaymentEventMessage` in the fraud handler, update its tests, and remove `PaymentMessage` when it is no longer used.
-- [ ] Accept only `payment.created` on the fraud consumer.
+- [x] Accept only `payment.created` on the fraud consumer.
 - [ ] Configure the fraud consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
 - [x] Load current payment state from PostgreSQL before running the fraud checker.
 - [x] Treat an already-applied or stale payment as a successful no-op.
