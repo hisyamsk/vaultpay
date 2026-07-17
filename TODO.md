@@ -94,10 +94,10 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 - [x] Decode and validate `event_id`, `event_type`, `payment_id`, `attempt`, and `occurred_at` at the adapter boundary.
 - [x] Replace the old `PaymentMessage` argument with `PaymentEventMessage` in the fraud handler, update its tests, and remove `PaymentMessage` when it is no longer used.
 - [x] Accept only `payment.created` on the fraud consumer.
-- [ ] Configure the fraud consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
+- [x] Configure the fraud consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
 - [x] Load current payment state from PostgreSQL before running the fraud checker.
 - [x] Treat an already-applied or stale payment as a successful no-op.
-- [ ] Acknowledge only after the handler's database work commits or returns a stale no-op.
+- [x] Acknowledge only after the handler's database work commits or returns a stale no-op.
 - [ ] Send malformed/permanent messages to the DLQ without retrying.
 - [ ] On a transient error, publish a copy to the retry path with `attempt + 1`, wait for confirmation, then acknowledge the original.
 - [ ] Do not acknowledge the original when retry publication is unconfirmed.
@@ -106,8 +106,8 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 
 Tests:
 
-- [ ] Successful database handling happens before acknowledgement.
-- [ ] Database failure does not acknowledge the original message.
+- [x] Successful database handling happens before acknowledgement.
+- [x] Database failure does not acknowledge the original message.
 - [ ] Stale duplicate delivery is acknowledged as a no-op.
 - [ ] Malformed input reaches the DLQ path.
 - [ ] Transient failure increments `attempt` and uses the delayed retry path.
