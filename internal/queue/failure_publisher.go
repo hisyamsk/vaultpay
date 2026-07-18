@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -63,5 +64,43 @@ func (p *RabbitMQFailurePublisher) PublishDeadLetter(ctx context.Context, body [
 }
 
 func (p *RabbitMQFailurePublisher) PublishRetry(ctx context.Context, event PaymentEventMessage) error {
+	publishCtx, cancel := context.WithTimeout(ctx, p.publishTimeout)
+	defer cancel()
+
+	event.Attempt++
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("publish retry marshal body: %w", err)
+	}
+
+	confirmation, err := p.channel.PublishWithDeferredConfirmWithContext(
+		publishCtx,
+		PaymentRetryExchange,
+		string(event.EventType),
+		false,
+		false,
+		amqp.Publishing{
+			DeliveryMode: amqp.Persistent,
+			ContentType:  "application/json",
+			MessageId:    event.EventID.String(),
+			Body:         body,
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("publish payment retry: %w", err)
+	}
+
+	if confirmation == nil {
+		return fmt.Errorf("publish payment retry: confirmation unavailable")
+	}
+
+	confirmed, err := confirmation.WaitContext(publishCtx)
+	if err != nil {
+		return fmt.Errorf("wait for payment retry confirmation: %w", err)
+	}
+	if !confirmed {
+		return fmt.Errorf("publish payment retry: RabbitMQ rejected message")
+	}
 	return nil
 }
