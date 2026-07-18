@@ -99,10 +99,10 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 - [x] Treat an already-applied or stale payment as a successful no-op.
 - [x] Acknowledge only after the handler's database work commits or returns a stale no-op.
 - [x] Send malformed/permanent messages to the DLQ without retrying.
-- [ ] On a transient error, publish a copy to the retry path with `attempt + 1`, wait for confirmation, then acknowledge the original.
-- [ ] Do not acknowledge the original when retry publication is unconfirmed.
+- [x] On a transient error, publish a copy to the retry path with `attempt + 1`, wait for confirmation, then acknowledge the original.
+- [x] Do not acknowledge the original when retry publication is unconfirmed.
 - [ ] Stop retrying after the configured maximum attempt and send the message to the DLQ.
-- [ ] Never use immediate `Nack(requeue=true)` for transient failures.
+- [x] Never use immediate `Nack(requeue=true)` for transient failures.
 
 Tests:
 
@@ -110,7 +110,7 @@ Tests:
 - [x] Database failure does not acknowledge the original message.
 - [ ] Stale duplicate delivery is acknowledged as a no-op.
 - [x] Malformed input reaches the DLQ path.
-- [ ] Transient failure increments `attempt` and uses the delayed retry path.
+- [x] Transient failure increments `attempt` and uses the delayed retry path.
 - [ ] Exhausted retry reaches the DLQ.
 
 Gate: a duplicated `payment.created` delivery cannot debit the sender twice.
@@ -160,6 +160,7 @@ Gate: processor decisions are deterministic and testable without RabbitMQ.
 
 - [ ] Consume only from the processor queue bound to `payment.processing`.
 - [ ] Configure the processor consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
+- [ ] When processor wiring creates real duplication, extract the completed fraud retry, DLQ, and acknowledgement behavior into a small shared consumer failure handler.
 - [ ] Reuse the same validation, manual-acknowledgement, bounded-retry, and DLQ rules as the fraud consumer.
 - [ ] Keep RabbitMQ types out of the processor handler.
 - [ ] Acknowledge only after completion/refund commits or stale work returns successfully.

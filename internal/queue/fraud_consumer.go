@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hisyamsk/vaultpay/internal/domain"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 var ErrInvalidFraudMessage = errors.New("invalid fraud message")
@@ -88,9 +89,10 @@ func (c *FraudConsumer) Consume(ctx context.Context) error {
 
 			if err := c.HandleDelivery(ctx, delivery.Body); err != nil {
 				if !errors.Is(err, ErrInvalidFraudMessage) {
-					// Temporary behavior until retry publication is implemented.
-					// Do not Ack transient failures.
-					return fmt.Errorf("handle fraud delivery: %w", err)
+					if retryErr := c.retryTransientDelivery(ctx, delivery); retryErr != nil {
+						return fmt.Errorf("retry transient fraud delivery: %w", retryErr)
+					}
+					continue
 				}
 
 				if publishErr := c.failurePublisher.PublishDeadLetter(
@@ -118,4 +120,26 @@ func (c *FraudConsumer) Consume(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (c *FraudConsumer) retryTransientDelivery(ctx context.Context, delivery amqp.Delivery) error {
+	event, err := DecodePaymentEvent(delivery.Body)
+	if err != nil {
+		return fmt.Errorf("retry transient delivery decode delivery")
+	}
+
+	if err := c.failurePublisher.PublishRetry(ctx, event); err != nil {
+		return fmt.Errorf(
+			"publish retry fraud message to retry queue: %w",
+			err,
+		)
+	}
+
+	if err := delivery.Ack(false); err != nil {
+		return fmt.Errorf(
+			"acknowledge retry fraud message: %w",
+			err,
+		)
+	}
+	return nil
 }
