@@ -158,7 +158,7 @@ Gate: internal transfer finalization is deterministic and testable without Rabbi
 - [x] Reuse the same validation, manual-acknowledgement, bounded-retry, and DLQ rules as the fraud consumer.
 - [x] Keep RabbitMQ types out of the processor handler.
 - [x] Acknowledge only after completion commits or stale work returns successfully.
-- [ ] Add structured logs with `event_id`, `payment_id`, `attempt`, status, error, and duration.
+- [x] Add structured logs with `event_id`, `payment_id`, `attempt`, status, error, and duration.
 
 Tests:
 
