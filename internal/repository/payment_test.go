@@ -424,15 +424,68 @@ func TestPaymentRepository_FailProcessedPayment_RefundsSenderOnce(t *testing.T) 
 	require.Equal(t, domain.PaymentStatusFailed, failed.Status)
 	require.Equal(t, int64(2000), accountBalance(t, ctx, repo.db, senderID))
 	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeRefund))
+	require.NotNil(t, failed.ErrorCode)
+	require.Equal(t, "processor_declined", *failed.ErrorCode)
+	require.Equal(t, 1, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeFailed))
+	require.Equal(t, 3, paymentEventCount(t, ctx, repo.db, payment.ID))
+
+	failedEvent := loadStoredPaymentEvent(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeFailed)
+	requirePaymentEventPayload(t, failedEvent)
 
 	failed, err = repo.FailProcessedPayment(ctx, payment.ID, "processor_declined")
 	require.NoError(t, err)
 	require.Equal(t, domain.PaymentStatusFailed, failed.Status)
 	require.Equal(t, int64(2000), accountBalance(t, ctx, repo.db, senderID))
 	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeRefund))
+	require.Equal(t, 1, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeFailed))
+	require.Equal(t, 3, paymentEventCount(t, ctx, repo.db, payment.ID))
+	require.Equal(
+		t,
+		failedEvent.eventID,
+		loadStoredPaymentEvent(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeFailed).eventID,
+	)
 
 	failed, err = repo.FindByID(ctx, payment.ID)
 	require.NoError(t, err)
 	require.NotNil(t, failed.ErrorCode)
 	require.Equal(t, "processor_declined", *failed.ErrorCode)
+}
+
+func TestPaymentRepository_FailProcessedPayment_RollsBackWhenFailedEventInsertFails(t *testing.T) {
+	repo, ctx := newTestRepo(t)
+	senderID := createAccount(t, ctx, repo.db, 2000)
+	receiverID := createAccount(t, ctx, repo.db, 1000)
+	payment := createPayment(t, ctx, repo, 500, senderID, receiverID, "idem-fail-event-failure")
+
+	processing, err := repo.StartApprovedPaymentProcessing(ctx, payment.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PaymentStatusProcessing, processing.Status)
+	require.Nil(t, processing.ErrorCode)
+	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, senderID))
+	require.Equal(t, int64(1000), accountBalance(t, ctx, repo.db, receiverID))
+	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
+	require.Equal(t, 2, paymentEventCount(t, ctx, repo.db, payment.ID))
+
+	_, err = repo.db.Exec(ctx, `
+		ALTER TABLE payment_events
+		ADD CONSTRAINT payment_events_reject_processor_failed_for_test
+		CHECK (event_type <> 'payment.failed')
+	`)
+	require.NoError(t, err)
+
+	failed, err := repo.FailProcessedPayment(ctx, payment.ID, "processor_declined")
+
+	require.Error(t, err)
+	require.Nil(t, failed)
+	stored, findErr := repo.FindByID(ctx, payment.ID)
+	require.NoError(t, findErr)
+	require.Equal(t, domain.PaymentStatusProcessing, stored.Status)
+	require.Nil(t, stored.ErrorCode)
+	require.True(t, processing.UpdatedAt.Equal(stored.UpdatedAt))
+	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, senderID))
+	require.Equal(t, int64(1000), accountBalance(t, ctx, repo.db, receiverID))
+	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
+	require.Equal(t, 0, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeRefund))
+	require.Equal(t, 0, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeFailed))
+	require.Equal(t, 2, paymentEventCount(t, ctx, repo.db, payment.ID))
 }
