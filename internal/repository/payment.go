@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,6 +143,40 @@ func scanPayment(row pgx.Row) (*domain.Payment, error) {
 	return payment, nil
 }
 
+func insertPaymentEvent(
+	ctx context.Context,
+	tx pgx.Tx,
+	paymentID uuid.UUID,
+	eventType domain.PaymentEventType,
+	occurredAt time.Time,
+) error {
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("generate payment event ID: %w", err)
+	}
+
+	payload, err := json.Marshal(domain.PaymentEventPayload{
+		EventID:    eventID,
+		EventType:  eventType,
+		PaymentID:  paymentID,
+		Attempt:    1,
+		OccurredAt: occurredAt,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal payment event payload: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO payment_events(event_id, payment_id, event_type, payload)
+		VALUES($1, $2, $3, $4)
+	`, eventID, paymentID, eventType, payload)
+	if err != nil {
+		return fmt.Errorf("insert payment event: %w", err)
+	}
+
+	return nil
+}
+
 // RejectPendingPayment locks paymentID and, when it is pending, changes it to
 // rejected and inserts one payment.rejected outbox event in the same
 // transaction. A payment already in any non-pending state is returned as a
@@ -185,26 +220,7 @@ func (r *PaymentRepository) RejectPendingPayment(ctx context.Context, paymentID 
 			return nil, err
 		}
 
-		eventID, err := uuid.NewV7()
-		if err != nil {
-			return nil, err
-		}
-		payload, err := json.Marshal(domain.PaymentEventPayload{
-			EventID:    eventID,
-			EventType:  domain.PaymentEventTypeRejected,
-			PaymentID:  payment.ID,
-			Attempt:    1,
-			OccurredAt: updatedAt,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO payment_events(event_id, payment_id, event_type, payload)
-			VALUES($1, $2, $3, $4)
-		`, eventID, paymentID, domain.PaymentEventTypeRejected, payload)
-		if err != nil {
+		if err := insertPaymentEvent(ctx, tx, payment.ID, domain.PaymentEventTypeRejected, updatedAt); err != nil {
 			return nil, err
 		}
 
@@ -240,17 +256,6 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 			return nil, ErrPaymentNotFound
 		}
 		return nil, err
-	}
-
-	eventID, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
-
-	payload := domain.PaymentEventPayload{
-		EventID:   eventID,
-		PaymentID: payment.ID,
-		Attempt:   1,
 	}
 
 	switch payment.Status {
@@ -291,19 +296,7 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 					return nil, err
 				}
 
-				payload.OccurredAt = payment.UpdatedAt
-				payload.EventType = domain.PaymentEventTypeFailed
-
-				jsonPayload, err := json.Marshal(payload)
-				if err != nil {
-					return nil, err
-				}
-
-				_, err = tx.Exec(ctx, `
-					INSERT INTO payment_events (event_id, payment_id, event_type, payload)
-					VALUES ($1, $2, $3, $4)
-				`, eventID, paymentID, domain.PaymentEventTypeFailed, jsonPayload)
-				if err != nil {
+				if err := insertPaymentEvent(ctx, tx, payment.ID, domain.PaymentEventTypeFailed, payment.UpdatedAt); err != nil {
 					return nil, err
 				}
 
@@ -335,18 +328,7 @@ func (r *PaymentRepository) StartApprovedPaymentProcessing(ctx context.Context, 
 			return nil, err
 		}
 
-		payload.OccurredAt = payment.UpdatedAt
-		payload.EventType = domain.PaymentEventTypeProcessing
-		jsonPayload, err := json.Marshal(payload)
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO payment_events (event_id, payment_id, event_type, payload)
-			VALUES ($1, $2, $3, $4)
-		`, eventID, paymentID, domain.PaymentEventTypeProcessing, jsonPayload)
-		if err != nil {
+		if err := insertPaymentEvent(ctx, tx, payment.ID, domain.PaymentEventTypeProcessing, payment.UpdatedAt); err != nil {
 			return nil, err
 		}
 
@@ -421,26 +403,7 @@ func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymen
 			return nil, err
 		}
 
-		eventID, err := uuid.NewV7()
-		if err != nil {
-			return nil, err
-		}
-		payload, err := json.Marshal(domain.PaymentEventPayload{
-			EventID:    eventID,
-			EventType:  domain.PaymentEventTypeCompleted,
-			PaymentID:  payment.ID,
-			Attempt:    1,
-			OccurredAt: payment.UpdatedAt,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO payment_events(event_id, payment_id, event_type, payload)
-			VALUES($1, $2, $3, $4)
-		`, eventID, paymentID, domain.PaymentEventTypeCompleted, payload)
-		if err != nil {
+		if err := insertPaymentEvent(ctx, tx, payment.ID, domain.PaymentEventTypeCompleted, payment.UpdatedAt); err != nil {
 			return nil, err
 		}
 
@@ -517,26 +480,7 @@ func (r *PaymentRepository) FailProcessedPayment(ctx context.Context, paymentID 
 			return nil, err
 		}
 
-		eventID, err := uuid.NewV7()
-		if err != nil {
-			return nil, err
-		}
-		payload, err := json.Marshal(domain.PaymentEventPayload{
-			EventID:    eventID,
-			EventType:  domain.PaymentEventTypeFailed,
-			PaymentID:  payment.ID,
-			Attempt:    1,
-			OccurredAt: payment.UpdatedAt,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO payment_events(event_id, payment_id, event_type, payload)
-			VALUES($1, $2, $3, $4)
-		`, eventID, paymentID, domain.PaymentEventTypeFailed, payload)
-		if err != nil {
+		if err := insertPaymentEvent(ctx, tx, payment.ID, domain.PaymentEventTypeFailed, payment.UpdatedAt); err != nil {
 			return nil, err
 		}
 
