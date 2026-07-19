@@ -23,6 +23,10 @@ func NewPaymentHandler(paymentService paymentService, logger *slog.Logger) *paym
 
 func (h *paymentHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(handle(http.MethodPost, "/api/v1/payments"), h.CreatePayment)
+	mux.HandleFunc(handle(http.MethodGet, "/api/v1/payments/{payment_id}"), h.GetPayment)
+}
+
+func (h *paymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *paymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
