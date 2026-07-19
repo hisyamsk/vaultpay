@@ -101,7 +101,7 @@ Gate: every fraud-caused payment mutation has exactly one matching committed out
 - [x] Send malformed/permanent messages to the DLQ without retrying.
 - [x] On a transient error, publish a copy to the retry path with `attempt + 1`, wait for confirmation, then acknowledge the original.
 - [x] Do not acknowledge the original when retry publication is unconfirmed.
-- [ ] Stop retrying after the configured maximum attempt and send the message to the DLQ.
+- [x] Stop retrying after the configured maximum attempt and send the message to the DLQ.
 - [x] Never use immediate `Nack(requeue=true)` for transient failures.
 
 Tests:
@@ -111,7 +111,7 @@ Tests:
 - [ ] Stale duplicate delivery is acknowledged as a no-op.
 - [x] Malformed input reaches the DLQ path.
 - [x] Transient failure increments `attempt` and uses the delayed retry path.
-- [ ] Exhausted retry reaches the DLQ.
+- [x] Exhausted retry reaches the DLQ.
 
 Gate: a duplicated `payment.created` delivery cannot debit the sender twice.
 

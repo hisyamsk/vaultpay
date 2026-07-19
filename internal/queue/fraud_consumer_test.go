@@ -126,7 +126,7 @@ func (f *fakeAcknowledger) Reject(_ uint64, _ bool) error {
 func newTestFraudConsumer(t *testing.T, handler fraudEventHandler) *FraudConsumer {
 	t.Helper()
 
-	consumer, err := NewFraudConsumer(handler, &fakeConsumerChannel{}, 1, &fakeFailurePublisher{})
+	consumer, err := NewFraudConsumer(handler, &fakeConsumerChannel{}, 1, 3, &fakeFailurePublisher{})
 	require.NoError(t, err)
 	return consumer
 }
@@ -264,7 +264,7 @@ func TestFraudConsumerConsumeConfiguresManualConsumptionAndAcknowledgesAfterHand
 		Attempt:    1,
 		OccurredAt: time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC),
 	}
-	consumer, err := NewFraudConsumer(handler, channel, 7, &fakeFailurePublisher{})
+	consumer, err := NewFraudConsumer(handler, channel, 7, 3, &fakeFailurePublisher{})
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -313,10 +313,10 @@ func TestFraudConsumerConsumePublishesRetryBeforeAcknowledgingTransientHandlerFa
 		EventID:    uuid.MustParse("11111111-1111-1111-1111-111111111111"),
 		EventType:  domain.PaymentEventTypeCreated,
 		PaymentID:  uuid.MustParse("22222222-2222-2222-2222-222222222222"),
-		Attempt:    1,
+		Attempt:    2,
 		OccurredAt: time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC),
 	}
-	consumer, err := NewFraudConsumer(handler, channel, 1, publisher)
+	consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -346,7 +346,7 @@ func TestFraudConsumerConsumeDoesNotAcknowledgeWhenRetryPublicationFails(t *test
 	channel := &fakeConsumerChannel{deliveries: deliveries}
 	publisher := &fakeFailurePublisher{retryErr: publishErr}
 	acknowledger := &fakeAcknowledger{}
-	consumer, err := NewFraudConsumer(handler, channel, 1, publisher)
+	consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -374,7 +374,7 @@ func TestFraudConsumerConsumeReturnsAckErrorAfterConfirmedRetry(t *testing.T) {
 	channel := &fakeConsumerChannel{deliveries: deliveries}
 	publisher := &fakeFailurePublisher{}
 	acknowledger := &fakeAcknowledger{ackErr: ackErr}
-	consumer, err := NewFraudConsumer(handler, channel, 1, publisher)
+	consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -393,6 +393,87 @@ func TestFraudConsumerConsumeReturnsAckErrorAfterConfirmedRetry(t *testing.T) {
 	require.Zero(t, acknowledger.rejectCalls)
 }
 
+func TestFraudConsumerConsumeDeadLettersExhaustedTransientFailureBeforeAcknowledging(t *testing.T) {
+	tests := []struct {
+		name    string
+		attempt int
+	}{
+		{name: "at maximum", attempt: 3},
+		{name: "above maximum", attempt: 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			message := validFraudEventMessage()
+			message.Attempt = tt.attempt
+			body := paymentEventBody(t, message)
+			handlerErr := errors.New("database unavailable")
+			deliveries := make(chan amqp.Delivery, 1)
+			channel := &fakeConsumerChannel{deliveries: deliveries}
+			order := []string{}
+			handler := &fakeFraudEventHandler{
+				err: handlerErr,
+				onHandle: func() {
+					order = append(order, "handle")
+				},
+			}
+			publisher := &fakeFailurePublisher{order: &order}
+			acknowledger := &fakeAcknowledger{order: &order}
+			consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
+			require.NoError(t, err)
+			deliveries <- amqp.Delivery{
+				Acknowledger: acknowledger,
+				DeliveryTag:  42,
+				Body:         body,
+			}
+			close(deliveries)
+
+			err = consumer.Consume(context.Background())
+
+			require.ErrorContains(t, err, "fraud delivery channel closed")
+			require.Equal(t, []PaymentEventMessage{message}, handler.messages)
+			require.Equal(t, [][]byte{body}, publisher.deadLetterBodies)
+			require.Empty(t, publisher.retryEvents)
+			require.Equal(t, []string{"handle", "publish dead letter", "ack"}, order)
+			require.Equal(t, 1, acknowledger.ackCalls)
+			require.False(t, acknowledger.ackMultiple)
+			require.Zero(t, acknowledger.nackCalls)
+			require.Zero(t, acknowledger.rejectCalls)
+		})
+	}
+}
+
+func TestFraudConsumerConsumeDoesNotAcknowledgeWhenExhaustedDeadLetterPublicationFails(t *testing.T) {
+	message := validFraudEventMessage()
+	message.Attempt = 3
+	body := paymentEventBody(t, message)
+	handlerErr := errors.New("database unavailable")
+	publishErr := errors.New("dead-letter publisher unavailable")
+	handler := &fakeFraudEventHandler{err: handlerErr}
+	deliveries := make(chan amqp.Delivery, 1)
+	channel := &fakeConsumerChannel{deliveries: deliveries}
+	publisher := &fakeFailurePublisher{deadLetterErr: publishErr}
+	acknowledger := &fakeAcknowledger{}
+	consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
+	require.NoError(t, err)
+	deliveries <- amqp.Delivery{
+		Acknowledger: acknowledger,
+		DeliveryTag:  42,
+		Body:         body,
+	}
+	close(deliveries)
+
+	err = consumer.Consume(context.Background())
+
+	require.ErrorIs(t, err, publishErr)
+	require.Equal(t, []PaymentEventMessage{message}, handler.messages)
+	require.Equal(t, [][]byte{body}, publisher.deadLetterBodies)
+	require.Empty(t, publisher.retryEvents)
+	require.Zero(t, acknowledger.ackCalls)
+	require.Zero(t, acknowledger.nackCalls)
+	require.Zero(t, acknowledger.rejectCalls)
+}
+
 func TestFraudConsumerConsumePublishesMalformedInputBeforeAcknowledging(t *testing.T) {
 	body := []byte(`{`)
 	deliveries := make(chan amqp.Delivery, 1)
@@ -401,7 +482,7 @@ func TestFraudConsumerConsumePublishesMalformedInputBeforeAcknowledging(t *testi
 	publisher := &fakeFailurePublisher{order: &order}
 	acknowledger := &fakeAcknowledger{order: &order}
 	handler := &fakeFraudEventHandler{}
-	consumer, err := NewFraudConsumer(handler, channel, 1, publisher)
+	consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -430,7 +511,7 @@ func TestFraudConsumerConsumeDoesNotAcknowledgeWhenDeadLetterPublicationFails(t 
 	publisher := &fakeFailurePublisher{deadLetterErr: publishErr}
 	acknowledger := &fakeAcknowledger{}
 	handler := &fakeFraudEventHandler{}
-	consumer, err := NewFraudConsumer(handler, channel, 1, publisher)
+	consumer, err := NewFraudConsumer(handler, channel, 1, 3, publisher)
 	require.NoError(t, err)
 	deliveries <- amqp.Delivery{
 		Acknowledger: acknowledger,
@@ -451,7 +532,7 @@ func TestFraudConsumerConsumeDoesNotAcknowledgeWhenDeadLetterPublicationFails(t 
 func TestFraudConsumerConsumeStopsWhenQoSConfigurationFails(t *testing.T) {
 	qosErr := errors.New("channel closed")
 	channel := &fakeConsumerChannel{qosErr: qosErr}
-	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1, &fakeFailurePublisher{})
+	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1, 3, &fakeFailurePublisher{})
 	require.NoError(t, err)
 
 	err = consumer.Consume(context.Background())
@@ -464,7 +545,7 @@ func TestFraudConsumerConsumeStopsWhenQoSConfigurationFails(t *testing.T) {
 func TestFraudConsumerConsumeReturnsConsumptionSetupFailure(t *testing.T) {
 	consumeErr := errors.New("consumer registration failed")
 	channel := &fakeConsumerChannel{consumeErr: consumeErr}
-	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1, &fakeFailurePublisher{})
+	consumer, err := NewFraudConsumer(&fakeFraudEventHandler{}, channel, 1, 3, &fakeFailurePublisher{})
 	require.NoError(t, err)
 
 	err = consumer.Consume(context.Background())

@@ -19,18 +19,23 @@ type FraudConsumer struct {
 	handler          fraudEventHandler
 	channel          consumerChannel
 	prefetchCount    int
+	maxAttempts      int
 	failurePublisher failurePublisher
 }
 
-func NewFraudConsumer(handler fraudEventHandler, channel consumerChannel, prefetchCount int, failurePublisher failurePublisher) (*FraudConsumer, error) {
+func NewFraudConsumer(handler fraudEventHandler, channel consumerChannel, prefetchCount, maxAttempts int, failurePublisher failurePublisher) (*FraudConsumer, error) {
 	if prefetchCount <= 0 {
 		return nil, errors.New("prefetch count must be greater than zero")
+	}
+	if maxAttempts <= 0 {
+		return nil, errors.New("maximum attempts must be greater than zero")
 	}
 
 	return &FraudConsumer{
 		channel:          channel,
 		handler:          handler,
 		prefetchCount:    prefetchCount,
+		maxAttempts:      maxAttempts,
 		failurePublisher: failurePublisher,
 	}, nil
 }
@@ -89,7 +94,19 @@ func (c *FraudConsumer) Consume(ctx context.Context) error {
 
 			if err := c.HandleDelivery(ctx, delivery.Body); err != nil {
 				if !errors.Is(err, ErrInvalidFraudMessage) {
-					if retryErr := c.retryTransientDelivery(ctx, delivery); retryErr != nil {
+					event, decodeErr := DecodePaymentEvent(delivery.Body)
+					if decodeErr != nil {
+						return fmt.Errorf("decode transient fraud delivery: %w", decodeErr)
+					}
+
+					if event.Attempt >= c.maxAttempts {
+						if exhaustedErr := c.deadLetterExhaustedDelivery(ctx, delivery); exhaustedErr != nil {
+							return fmt.Errorf("dead-letter exhausted fraud delivery: %w", exhaustedErr)
+						}
+						continue
+					}
+
+					if retryErr := c.retryTransientDelivery(ctx, delivery, event); retryErr != nil {
 						return fmt.Errorf("retry transient fraud delivery: %w", retryErr)
 					}
 					continue
@@ -122,12 +139,20 @@ func (c *FraudConsumer) Consume(ctx context.Context) error {
 	}
 }
 
-func (c *FraudConsumer) retryTransientDelivery(ctx context.Context, delivery amqp.Delivery) error {
-	event, err := DecodePaymentEvent(delivery.Body)
-	if err != nil {
-		return fmt.Errorf("retry transient delivery decode delivery")
+func (c *FraudConsumer) deadLetterExhaustedDelivery(ctx context.Context, delivery amqp.Delivery) error {
+	if err := c.failurePublisher.PublishDeadLetter(ctx, delivery.Body); err != nil {
+		return fmt.Errorf("exhaust delivery publish dead letter: %w", err)
 	}
+	if err := delivery.Ack(false); err != nil {
+		return fmt.Errorf(
+			"acknowledge exhausted delivery: %w",
+			err,
+		)
+	}
+	return nil
+}
 
+func (c *FraudConsumer) retryTransientDelivery(ctx context.Context, delivery amqp.Delivery, event PaymentEventMessage) error {
 	if err := c.failurePublisher.PublishRetry(ctx, event); err != nil {
 		return fmt.Errorf(
 			"publish retry fraud message to retry queue: %w",
