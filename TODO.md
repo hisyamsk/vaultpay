@@ -152,19 +152,19 @@ Gate: internal transfer finalization is deterministic and testable without Rabbi
 
 ## Wire The Processor RabbitMQ Consumer
 
-- [ ] Consume only from the processor queue bound to `payment.processing`.
-- [ ] Configure the processor consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
-- [ ] When processor wiring creates real duplication, extract the completed fraud retry, DLQ, and acknowledgement behavior into a small shared consumer failure handler.
-- [ ] Reuse the same validation, manual-acknowledgement, bounded-retry, and DLQ rules as the fraud consumer.
-- [ ] Keep RabbitMQ types out of the processor handler.
-- [ ] Acknowledge only after completion commits or stale work returns successfully.
+- [x] Consume only from the processor queue bound to `payment.processing`.
+- [x] Configure the processor consumer channel with bounded prefetch and consume with automatic acknowledgements disabled.
+- [x] When processor wiring creates real duplication, extract the completed fraud retry, DLQ, and acknowledgement behavior into a small shared consumer adapter.
+- [x] Reuse the same validation, manual-acknowledgement, bounded-retry, and DLQ rules as the fraud consumer.
+- [x] Keep RabbitMQ types out of the processor handler.
+- [x] Acknowledge only after completion commits or stale work returns successfully.
 - [ ] Add structured logs with `event_id`, `payment_id`, `attempt`, status, error, and duration.
 
 Tests:
 
 - [ ] Success is acknowledged only after the database commit.
-- [ ] Transient failure follows the delayed retry path.
-- [ ] Malformed and exhausted messages reach the DLQ.
+- [x] Transient failure follows the delayed retry path.
+- [x] Malformed and exhausted messages reach the DLQ.
 - [ ] Duplicate delivery does not credit the receiver twice.
 
 Gate: a created payment can travel asynchronously to `completed` without duplicate money movement.
