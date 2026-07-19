@@ -421,6 +421,29 @@ func (r *PaymentRepository) CompleteProcessedPayment(ctx context.Context, paymen
 			return nil, err
 		}
 
+		eventID, err := uuid.NewV7()
+		if err != nil {
+			return nil, err
+		}
+		payload, err := json.Marshal(domain.PaymentEventPayload{
+			EventID:    eventID,
+			EventType:  domain.PaymentEventTypeCompleted,
+			PaymentID:  payment.ID,
+			Attempt:    1,
+			OccurredAt: payment.UpdatedAt,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO payment_events(event_id, payment_id, event_type, payload)
+			VALUES($1, $2, $3, $4)
+		`, eventID, paymentID, domain.PaymentEventTypeCompleted, payload)
+		if err != nil {
+			return nil, err
+		}
+
 		if err := tx.Commit(ctx); err != nil {
 			return nil, err
 		}

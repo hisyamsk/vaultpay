@@ -331,12 +331,24 @@ func TestPaymentRepository_CompleteProcessedPayment_CreditsReceiverOnce(t *testi
 	require.Equal(t, domain.PaymentStatusCompleted, completed.Status)
 	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, receiverID))
 	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, receiverID, domain.LedgerEntryTypeCredit))
+	require.Equal(t, 1, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeCompleted))
+	require.Equal(t, 3, paymentEventCount(t, ctx, repo.db, payment.ID))
+
+	completedEvent := loadStoredPaymentEvent(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeCompleted)
+	requirePaymentEventPayload(t, completedEvent)
 
 	completed, err = repo.CompleteProcessedPayment(ctx, payment.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PaymentStatusCompleted, completed.Status)
 	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, receiverID))
 	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, receiverID, domain.LedgerEntryTypeCredit))
+	require.Equal(t, 1, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeCompleted))
+	require.Equal(t, 3, paymentEventCount(t, ctx, repo.db, payment.ID))
+	require.Equal(
+		t,
+		completedEvent.eventID,
+		loadStoredPaymentEvent(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeCompleted).eventID,
+	)
 }
 
 func TestPaymentRepository_CompleteProcessedPayment_RejectsPendingPayment(t *testing.T) {
@@ -355,6 +367,45 @@ func TestPaymentRepository_CompleteProcessedPayment_RejectsPendingPayment(t *tes
 	require.Equal(t, domain.PaymentStatusPending, unchanged.Status)
 	require.Equal(t, int64(1000), accountBalance(t, ctx, repo.db, receiverID))
 	require.Equal(t, 0, ledgerEntryCount(t, ctx, repo.db, payment.ID, receiverID, domain.LedgerEntryTypeCredit))
+	require.Equal(t, 0, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeCompleted))
+	require.Equal(t, 1, paymentEventCount(t, ctx, repo.db, payment.ID))
+}
+
+func TestPaymentRepository_CompleteProcessedPayment_RollsBackWhenCompletedEventInsertFails(t *testing.T) {
+	repo, ctx := newTestRepo(t)
+	senderID := createAccount(t, ctx, repo.db, 2000)
+	receiverID := createAccount(t, ctx, repo.db, 1000)
+	payment := createPayment(t, ctx, repo, 500, senderID, receiverID, "idem-complete-event-failure")
+
+	processing, err := repo.StartApprovedPaymentProcessing(ctx, payment.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PaymentStatusProcessing, processing.Status)
+	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, senderID))
+	require.Equal(t, int64(1000), accountBalance(t, ctx, repo.db, receiverID))
+	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
+	require.Equal(t, 2, paymentEventCount(t, ctx, repo.db, payment.ID))
+
+	_, err = repo.db.Exec(ctx, `
+		ALTER TABLE payment_events
+		ADD CONSTRAINT payment_events_reject_completed_for_test
+		CHECK (event_type <> 'payment.completed')
+	`)
+	require.NoError(t, err)
+
+	completed, err := repo.CompleteProcessedPayment(ctx, payment.ID)
+
+	require.Error(t, err)
+	require.Nil(t, completed)
+	stored, findErr := repo.FindByID(ctx, payment.ID)
+	require.NoError(t, findErr)
+	require.Equal(t, domain.PaymentStatusProcessing, stored.Status)
+	require.True(t, processing.UpdatedAt.Equal(stored.UpdatedAt))
+	require.Equal(t, int64(1500), accountBalance(t, ctx, repo.db, senderID))
+	require.Equal(t, int64(1000), accountBalance(t, ctx, repo.db, receiverID))
+	require.Equal(t, 1, ledgerEntryCount(t, ctx, repo.db, payment.ID, senderID, domain.LedgerEntryTypeDebit))
+	require.Equal(t, 0, ledgerEntryCount(t, ctx, repo.db, payment.ID, receiverID, domain.LedgerEntryTypeCredit))
+	require.Equal(t, 0, paymentEventTypeCount(t, ctx, repo.db, payment.ID, domain.PaymentEventTypeCompleted))
+	require.Equal(t, 2, paymentEventCount(t, ctx, repo.db, payment.ID))
 }
 
 func TestPaymentRepository_FailProcessedPayment_RefundsSenderOnce(t *testing.T) {
