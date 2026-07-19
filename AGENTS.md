@@ -23,7 +23,7 @@ Before the first complete version, recommend only work required for:
 - transactional outbox
 - RabbitMQ relay and consumers
 - existing fraud behavior
-- deterministic processor behavior
+- internal transfer finalization
 - current atomic ledger operations
 - payment status lookup
 - read-only internal reconciliation
@@ -180,7 +180,7 @@ Avoid:
 - Use unique constraints as the final duplicate guard.
 - Use parameterized SQL.
 - Keep ledger entries append-only.
-- Never hold a transaction open during a RabbitMQ or fake external call.
+- Never hold a transaction open during a RabbitMQ or external call.
 - Correct errors with new entries in future versions; never rewrite ledger history.
 
 The existing debit, credit, and refund ledger model is acceptable for the initial version.
@@ -219,7 +219,7 @@ Consumer flow:
 1. Validate the message.
 2. Load current payment state.
 3. Treat stale/already-applied work as a successful no-op.
-4. Run deterministic external behavior outside a transaction.
+4. Run any required external behavior outside a transaction.
 5. Apply the guarded database transaction and next outbox event.
 6. Commit.
 7. Acknowledge on the receiving channel.
@@ -260,7 +260,7 @@ Classify worker errors:
 - invalid/permanent: reject or DLQ
 - duplicate/stale: acknowledge as no-op
 - transient database/broker/external: bounded retry
-- definitive fraud/processor result: business transition
+- definitive fraud result: business transition
 - exhausted retry: DLQ and structured error log
 
 ## Testing Priorities

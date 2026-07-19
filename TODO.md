@@ -132,29 +132,23 @@ Tests:
 - [x] Duplicate failure keeps one sender refund, one refund entry, and one failed event.
 - [x] A terminal payment cannot switch to another terminal outcome.
 
-Gate: each processor outcome changes money and emits its terminal event exactly once.
+Gate: each terminal operation changes money and emits its event exactly once.
 
-## Implement The Deterministic Processor Core
+## Implement The Internal Transfer Finalizer
 
-- [ ] Add a small processor interface near the worker.
-- [ ] Implement a deterministic fake with explicit success and definitive-failure outcomes.
-- [ ] Do not use randomness, sleeping, or hidden retries.
 - [ ] Add a transport-independent processor handler for `payment.processing` messages.
 - [ ] Load the payment from PostgreSQL and skip non-processing states as successful stale work.
-- [ ] Call the fake processor outside every database transaction.
-- [ ] On success, call the atomic complete-payment operation.
-- [ ] On definitive failure, call the atomic fail-and-refund operation with a safe error code.
-- [ ] Return transient fake or database errors to the RabbitMQ adapter for bounded retry.
+- [ ] Call the atomic complete-payment operation directly; do not call an external processor.
+- [ ] Return transient database errors to the RabbitMQ adapter for bounded retry.
 
 Tests:
 
 - [ ] Invalid and missing payment inputs are classified correctly.
-- [ ] Non-processing states do not call the fake processor or mutate money.
-- [ ] Deterministic success calls completion once.
-- [ ] Deterministic failure calls refund/failure once with the expected error code.
-- [ ] Fake and database errors are returned for retry.
+- [ ] Non-processing states do not call completion or mutate money.
+- [ ] A processing payment calls completion once.
+- [ ] Database errors are returned for retry.
 
-Gate: processor decisions are deterministic and testable without RabbitMQ.
+Gate: internal transfer finalization is deterministic and testable without RabbitMQ.
 
 ## Wire The Processor RabbitMQ Consumer
 
@@ -163,17 +157,17 @@ Gate: processor decisions are deterministic and testable without RabbitMQ.
 - [ ] When processor wiring creates real duplication, extract the completed fraud retry, DLQ, and acknowledgement behavior into a small shared consumer failure handler.
 - [ ] Reuse the same validation, manual-acknowledgement, bounded-retry, and DLQ rules as the fraud consumer.
 - [ ] Keep RabbitMQ types out of the processor handler.
-- [ ] Acknowledge only after completion/refund commits or stale work returns successfully.
-- [ ] Add structured logs with `event_id`, `payment_id`, `attempt`, outcome, status, error, and duration.
+- [ ] Acknowledge only after completion commits or stale work returns successfully.
+- [ ] Add structured logs with `event_id`, `payment_id`, `attempt`, status, error, and duration.
 
 Tests:
 
 - [ ] Success is acknowledged only after the database commit.
 - [ ] Transient failure follows the delayed retry path.
 - [ ] Malformed and exhausted messages reach the DLQ.
-- [ ] Duplicate delivery does not credit or refund twice.
+- [ ] Duplicate delivery does not credit the receiver twice.
 
-Gate: a created payment can travel asynchronously to `completed` or `failed` without duplicate money movement.
+Gate: a created payment can travel asynchronously to `completed` without duplicate money movement.
 
 ## Add Payment Status Lookup
 

@@ -25,7 +25,7 @@ The first portfolio version will demonstrate:
 - atomic balance and append-only ledger updates
 - transactional outbox publication
 - RabbitMQ manual acknowledgements, bounded retry, and a DLQ
-- deterministic fraud and payment processor simulations
+- deterministic fraud behavior and internal transfer finalization
 - read-only internal reconciliation
 - structured logs and focused correctness tests
 
@@ -71,8 +71,8 @@ POST /payments
   -> notification worker logs the result
 ```
 
-The fake fraud checker and processor are deterministic so tests and demos produce
-repeatable results. No real external payment is performed.
+The fraud checker is deterministic so tests and demos produce repeatable results.
+Money movement is internal and no external payment processor is called.
 
 ## Reconciliation V1
 
@@ -101,7 +101,7 @@ safe while still demonstrating the control used to detect pipeline gaps.
 | Transactional outbox writes | Initial-version work |
 | RabbitMQ relay and topology | Initial-version work |
 | Fraud RabbitMQ consumer wiring | Initial-version work |
-| Deterministic processor worker | Initial-version work |
+| Internal transfer finalizer worker | Initial-version work |
 | Notification logging worker | Optional initial-version work |
 | Read-only reconciliation command | Initial-version work |
 
@@ -110,7 +110,7 @@ safe while still demonstrating the control used to detect pipeline gaps.
 1. Insert `payment.created` into the outbox in the payment creation transaction.
 2. Add the RabbitMQ exchange, queues, relay, publisher confirms, and manual ack.
 3. Wire the existing fraud worker and emit its next outbox event atomically.
-4. Add the deterministic processor worker using existing complete/fail services.
+4. Add the internal transfer finalizer using the existing completion service.
 5. Add payment status lookup and the read-only reconciliation command.
 6. Add one end-to-end duplicate-delivery test and update this status table.
 7. Add the notification logging worker only if the critical flow is already solid.
@@ -128,7 +128,7 @@ internal/
   app/                 dependency wiring
   config/              environment configuration
   domain/              payment and ledger types
-  external/            deterministic external simulations
+  external/            deterministic fraud simulation
   handler/             HTTP transport
   queue/               messages and RabbitMQ adapter
   repository/          SQL and transaction boundaries
@@ -190,9 +190,9 @@ These are valuable follow-up improvements, not initial-version requirements:
 
 1. Convert movement entries into balanced double-entry journals with a clearing
    account and currency-aware accounts.
-2. Add `requires_reconciliation` for ambiguous processor outcomes and make the fake
-   processor queryable by a stable external idempotency key.
-3. Compare local payments with a simulated processor settlement report and persist
+2. Integrate a real external payment rail and model ambiguous outcomes with a
+   `requires_reconciliation` state.
+3. Compare local payments with an external settlement report and persist
    reconciliation runs and discrepancies.
 4. Add safe, narrowly scoped automatic reconciliation repair.
 5. Move idempotency from the JSON body to an `Idempotency-Key` header and store a

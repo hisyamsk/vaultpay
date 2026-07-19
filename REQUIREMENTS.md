@@ -17,7 +17,7 @@ VaultPay models a payment between two internal accounts using:
 - Go and `net/http`
 - PostgreSQL as the source of truth
 - RabbitMQ for asynchronous delivery
-- deterministic fake fraud, processor, and notification integrations
+- deterministic fake fraud behavior and internal transfer finalization
 
 Amounts are positive integer minor units in one implicit demo currency. The
 system does not process real money or card data.
@@ -163,15 +163,11 @@ bounded number of retries without immediate hot-loop requeueing.
 - Consume `payment.processing` events.
 - Load the current payment from PostgreSQL.
 - If it is no longer `processing`, acknowledge as a stale successful no-op.
-- Use a deterministic fake outcome; do not use randomness in tests.
-- On success, atomically credit the receiver, insert the credit ledger entry, move
+- Do not call an external payment processor; this worker finalizes an internal transfer.
+- Atomically credit the receiver, insert the credit ledger entry, move
   to `completed`, and insert `payment.completed` into the outbox.
-- On definitive failure, atomically refund the sender, insert the refund ledger
-  entry, move to `failed`, and insert `payment.failed` into the outbox.
-- Duplicate delivery must not credit or refund twice.
-
-The initial fake does not model a processor accepting a request while its response
-is lost. Unknown external outcomes are an important deferred improvement.
+- Return temporary database errors so the RabbitMQ consumer can retry them.
+- Duplicate delivery must not credit the receiver twice.
 
 ## 10. Notification Worker
 
@@ -190,8 +186,8 @@ If implemented:
 Keep the current append-only movement model:
 
 - fraud approval: sender debit entry
-- processor success: receiver credit entry
-- processor failure after debit: sender refund entry
+- internal transfer finalization: receiver credit entry
+- guarded failure after debit: sender refund entry
 
 Use unique constraints and payment row locking to make each movement happen at
 most once. Account balance updates and ledger inserts must remain in the same
@@ -224,8 +220,8 @@ Classify errors simply:
 
 - malformed message or invalid input: reject or DLQ; no repeated retry
 - duplicate or stale work: successful no-op
-- temporary database, broker, or fake external error: bounded retry
-- definitive fraud/processor outcome: apply the business transition
+- temporary database or broker error: bounded retry
+- definitive fraud outcome: apply the business transition
 - exhausted retry: DLQ and structured error log
 
 Wrap internal errors with `%w`. Do not return database or broker errors directly
@@ -251,8 +247,8 @@ Add focused tests for:
 
 - payment creation and outbox insertion commit or roll back together
 - duplicate fraud delivery does not debit twice
-- duplicate processor success does not credit twice
-- duplicate processor failure does not refund twice
+- duplicate transfer finalization does not credit twice
+- duplicate guarded failure does not refund twice
 - outbox events are marked published only after confirmation
 - reconciliation detects seeded lifecycle/ledger and stale-outbox discrepancies
 
@@ -291,9 +287,9 @@ Add these incrementally after beginning job applications:
 
 1. Balanced double-entry journals, clearing account, currency, and opening balance
    journals.
-2. Processor idempotency records, status lookup, unknown outcomes, and a
+2. Real external payment-rail integration, unknown outcomes, and a
    `requires_reconciliation` state.
-3. Simulated processor settlement reports and persisted reconciliation runs/items.
+3. External settlement reports and persisted reconciliation runs/items.
 4. Guarded automatic repair through existing payment services.
 5. `Idempotency-Key` header and canonical request fingerprint.
 6. Notification delivery records and consumer receipts.
