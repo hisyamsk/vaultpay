@@ -121,8 +121,8 @@ Gate: a duplicated `payment.created` delivery cannot debit the sender twice.
 - [x] Commit receiver credit, credit ledger entry, `completed` status, and `payment.completed` together.
 - [x] In definitive failure, lock the payment and sender account rows.
 - [x] Commit sender refund, refund ledger entry, `failed` status/error code, and `payment.failed` together.
-- [ ] Treat terminal or already-applied payments as successful no-ops without another ledger entry or event.
-- [ ] Keep unique ledger constraints as the final duplicate guard.
+- [x] Treat terminal or already-applied payments as successful no-ops without another ledger entry or event.
+- [x] Keep unique ledger constraints as the final duplicate guard.
 
 Tests:
 
@@ -130,7 +130,7 @@ Tests:
 - [x] Failure/refund and `payment.failed` roll back together on any write failure.
 - [x] Duplicate success keeps one receiver credit, one credit entry, and one completed event.
 - [x] Duplicate failure keeps one sender refund, one refund entry, and one failed event.
-- [ ] A terminal payment cannot switch to another terminal outcome.
+- [x] A terminal payment cannot switch to another terminal outcome.
 
 Gate: each processor outcome changes money and emits its terminal event exactly once.
 
