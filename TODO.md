@@ -136,17 +136,17 @@ Gate: each terminal operation changes money and emits its event exactly once.
 
 ## Implement The Internal Transfer Finalizer
 
-- [ ] Add a transport-independent processor handler for `payment.processing` messages.
-- [ ] Load the payment from PostgreSQL and skip non-processing states as successful stale work.
-- [ ] Call the atomic complete-payment operation directly; do not call an external processor.
-- [ ] Return transient database errors to the RabbitMQ adapter for bounded retry.
+- [x] Add a transport-independent processor handler for `payment.processing` messages.
+- [x] Load the payment from PostgreSQL and skip non-processing states as successful stale work.
+- [x] Call the atomic complete-payment operation directly; do not call an external processor.
+- [x] Return transient database errors to the RabbitMQ adapter for bounded retry.
 
 Tests:
 
-- [ ] Invalid and missing payment inputs are classified correctly.
-- [ ] Non-processing states do not call completion or mutate money.
-- [ ] A processing payment calls completion once.
-- [ ] Database errors are returned for retry.
+- [x] Invalid and missing payment inputs are classified correctly.
+- [x] Non-processing states do not call completion or mutate money.
+- [x] A processing payment calls completion once.
+- [x] Database errors are returned for retry.
 
 Gate: internal transfer finalization is deterministic and testable without RabbitMQ.
 
