@@ -108,7 +108,7 @@ Tests:
 
 - [x] Successful database handling happens before acknowledgement.
 - [x] Database failure does not acknowledge the original message.
-- [ ] Stale duplicate delivery is acknowledged as a no-op.
+- [x] Stale duplicate delivery is acknowledged as a no-op.
 - [x] Malformed input reaches the DLQ path.
 - [x] Transient failure increments `attempt` and uses the delayed retry path.
 - [x] Exhausted retry reaches the DLQ.
@@ -162,10 +162,10 @@ Gate: internal transfer finalization is deterministic and testable without Rabbi
 
 Tests:
 
-- [ ] Success is acknowledged only after the database commit.
+- [x] Success is acknowledged only after the database commit.
 - [x] Transient failure follows the delayed retry path.
 - [x] Malformed and exhausted messages reach the DLQ.
-- [ ] Duplicate delivery does not credit the receiver twice.
+- [x] Duplicate delivery does not credit the receiver twice.
 
 Gate: a created payment can travel asynchronously to `completed` without duplicate money movement.
 
