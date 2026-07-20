@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hisyamsk/vaultpay/internal/repository"
 	"github.com/hisyamsk/vaultpay/internal/service"
 )
 
@@ -27,6 +28,44 @@ func (h *paymentHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *paymentHandler) GetPayment(w http.ResponseWriter, r *http.Request) {
+	paymentID, err := uuid.Parse(r.PathValue("payment_id"))
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, errInvalidPaymentID)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	payment, err := h.service.FindPaymentByID(ctx, paymentID)
+	if err != nil {
+		if errors.Is(err, repository.ErrPaymentNotFound) {
+			sendErrorResponse(w, http.StatusNotFound, errPaymentNotFound)
+			return
+		}
+
+		if errors.Is(err, service.ErrInvalidPaymentID) {
+			sendErrorResponse(w, http.StatusBadRequest, errInvalidPaymentID)
+			return
+		}
+
+		sendErrorResponse(w, http.StatusInternalServerError, errInternalServerError)
+		return
+	}
+
+	jsonResponse := getPaymentResponse{
+		PaymentID:   payment.ID.String(),
+		Amount:      payment.Amount,
+		SenderID:    payment.SenderID.String(),
+		ReceiverID:  payment.ReceiverID.String(),
+		Status:      string(payment.Status),
+		ErrorCode:   payment.ErrorCode,
+		Description: payment.Description,
+		CreatedAt:   payment.CreatedAt,
+		UpdatedAt:   payment.UpdatedAt,
+	}
+
+	sendSuccessResponse(w, http.StatusOK, jsonResponse)
 }
 
 func (h *paymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {

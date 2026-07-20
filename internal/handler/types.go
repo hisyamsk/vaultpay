@@ -19,6 +19,7 @@ var errInvalidReceiverID = errors.New("invalid receiverId")
 var errInvalidAmount = errors.New("amount must be greater than 0")
 var errInvalidIdempotencyKeyLength = errors.New("idempotency key length must be less or equal to 100")
 var errInvalidPaymentID = errors.New("invalid payment id")
+var errPaymentNotFound = errors.New("payment not found")
 
 var errInternalServerError = errors.New("internal server error")
 

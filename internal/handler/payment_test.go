@@ -97,32 +97,39 @@ func TestGetPaymentReturnsCurrentPayment(t *testing.T) {
 	require.Equal(t, 1, findCalls)
 }
 
-func TestGetPaymentRejectsInvalidPaymentIDBeforeService(t *testing.T) {
-	tests := []struct {
-		name      string
-		paymentID string
-	}{
-		{name: "malformed UUID", paymentID: "not-a-uuid"},
-		{name: "nil UUID", paymentID: uuid.Nil.String()},
-	}
+func TestGetPaymentRejectsMalformedPaymentIDBeforeService(t *testing.T) {
+	handler := newTestPaymentHandler(fakePaymentService{
+		findPaymentByIDFn: func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+			t.Fatal("expected service not to be called")
+			return nil, nil
+		},
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handler := newTestPaymentHandler(fakePaymentService{
-				findPaymentByIDFn: func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
-					t.Fatal("expected service not to be called")
-					return nil, nil
-				},
-			})
+	rr := performGetPaymentRequest(handler, "not-a-uuid")
 
-			rr := performGetPaymentRequest(handler, tt.paymentID)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var response errorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
+	require.Equal(t, errInvalidPaymentID.Error(), response.Message)
+}
 
-			require.Equal(t, http.StatusBadRequest, rr.Code)
-			var response errorResponse
-			require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
-			require.Equal(t, errInvalidPaymentID.Error(), response.Message)
-		})
-	}
+func TestGetPaymentMapsServiceInvalidPaymentIDToBadRequest(t *testing.T) {
+	findCalls := 0
+	handler := newTestPaymentHandler(fakePaymentService{
+		findPaymentByIDFn: func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+			findCalls++
+			require.Equal(t, uuid.Nil, paymentID)
+			return nil, service.ErrInvalidPaymentID
+		},
+	})
+
+	rr := performGetPaymentRequest(handler, uuid.Nil.String())
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var response errorResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
+	require.Equal(t, errInvalidPaymentID.Error(), response.Message)
+	require.Equal(t, 1, findCalls)
 }
 
 func TestGetPaymentReturnsNotFoundForMissingPayment(t *testing.T) {

@@ -171,18 +171,18 @@ Gate: a created payment can travel asynchronously to `completed` without duplica
 
 ## Add Payment Status Lookup
 
-- [ ] Add `GET /api/v1/payments/{payment_id}` to the existing payment handler.
-- [ ] Validate the path UUID before calling the service.
-- [ ] Return payment ID, amount, sender ID, receiver ID, status, safe error code, description, and timestamps.
-- [ ] Return `404` for a missing payment and a safe `500` response for internal errors.
-- [ ] Keep database errors out of client responses.
+- [x] Add `GET /api/v1/payments/{payment_id}` to the existing payment handler.
+- [x] Validate the path UUID before calling the service.
+- [x] Return payment ID, amount, sender ID, receiver ID, status, safe error code, description, and timestamps.
+- [x] Return `404` for a missing payment and a safe `500` response for internal errors.
+- [x] Keep database errors out of client responses.
 
 Tests:
 
-- [ ] Valid payment lookup returns the current asynchronous status.
-- [ ] Invalid UUID returns `400`.
-- [ ] Missing payment returns `404`.
-- [ ] Repository failure returns a safe `500`.
+- [x] Valid payment lookup returns the current asynchronous status.
+- [x] Invalid UUID returns `400`.
+- [x] Missing payment returns `404`.
+- [x] Repository failure returns a safe `500`.
 
 Gate: clients can poll a created payment until it reaches a terminal state.
 
