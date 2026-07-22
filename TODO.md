@@ -140,6 +140,9 @@ Gate: each terminal operation changes money and emits its event exactly once.
 - [x] Load the payment from PostgreSQL and skip non-processing states as successful stale work.
 - [x] Call the atomic complete-payment operation directly; do not call an external processor.
 - [x] Return transient database errors to the RabbitMQ adapter for bounded retry.
+- [ ] Classify a definitive receiver-credit failure separately from transient database errors.
+- [ ] On a definitive receiver-credit failure, call the existing atomic failed-payment operation with a stable safe error code so the sender refund, refund ledger entry, `failed` status, and `payment.failed` event commit together.
+- [ ] Return success only after the failure/refund transaction commits so the RabbitMQ adapter acknowledges afterward.
 
 Tests:
 
@@ -147,8 +150,10 @@ Tests:
 - [x] Non-processing states do not call completion or mutate money.
 - [x] A processing payment calls completion once.
 - [x] Database errors are returned for retry.
+- [ ] A definitive receiver-credit failure invokes the existing failed-payment operation once with the expected error code.
+- [ ] A failure/refund transaction error is returned for retry and is not treated as successful finalization.
 
-Gate: internal transfer finalization is deterministic and testable without RabbitMQ.
+Gate: internal transfer finalization deterministically completes the credit or atomically fails and refunds the sender, and remains testable without RabbitMQ.
 
 ## Wire The Processor RabbitMQ Consumer
 
