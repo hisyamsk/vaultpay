@@ -21,6 +21,7 @@ type TransferFinalizer struct {
 type transferFinalizerPaymentService interface {
 	FindPaymentByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	CompleteProcessedPayment(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+	FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error)
 }
 
 func NewTransferFinalizer(s transferFinalizerPaymentService, logger *slog.Logger) *TransferFinalizer {

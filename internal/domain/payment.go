@@ -16,7 +16,8 @@ const (
 	PaymentStatusFailed     PaymentStatus = "failed"
 	PaymentStatusRejected   PaymentStatus = "rejected"
 
-	ErrorCodeInsufficientFunds ErrorCode = "insufficient_funds"
+	ErrorCodeInsufficientFunds       ErrorCode = "insufficient_funds"
+	ErrorCodeReceiverAccountNotFound ErrorCode = "receiver_account_not_found"
 )
 
 type Payment struct {

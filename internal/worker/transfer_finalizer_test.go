@@ -21,6 +21,7 @@ type fakeTransferFinalizerPaymentService struct {
 
 	findPaymentByIDFn          func(ctx context.Context, id uuid.UUID) (*domain.Payment, error)
 	completeProcessedPaymentFn func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error)
+	failProcessedPaymentFn     func(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error)
 }
 
 func (f *fakeTransferFinalizerPaymentService) FindPaymentByID(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
@@ -37,6 +38,14 @@ func (f *fakeTransferFinalizerPaymentService) CompleteProcessedPayment(ctx conte
 		f.t.Fatalf("unexpected CompleteProcessedPayment call")
 	}
 	return f.completeProcessedPaymentFn(ctx, paymentID)
+}
+
+func (f *fakeTransferFinalizerPaymentService) FailProcessedPayment(ctx context.Context, paymentID uuid.UUID, errorCode string) (*domain.Payment, error) {
+	f.t.Helper()
+	if f.failProcessedPaymentFn == nil {
+		f.t.Fatalf("unexpected FailProcessedPayment call")
+	}
+	return f.failProcessedPaymentFn(ctx, paymentID, errorCode)
 }
 
 func newTestTransferFinalizer(t *testing.T, service *fakeTransferFinalizerPaymentService) *TransferFinalizer {
@@ -200,4 +209,75 @@ func TestTransferFinalizerHandleEventReturnsCompletionErrorForRetry(t *testing.T
 	require.ErrorContains(t, err, "finalize internal transfer")
 	require.Equal(t, 1, findCalls)
 	require.Equal(t, 1, completeCalls)
+}
+
+func TestTransferFinalizerHandleEventRefundsDefinitiveReceiverCreditFailure(t *testing.T) {
+	paymentID := uuid.MustParse(transferFinalizerPaymentID)
+	completeCalls := 0
+	failCalls := 0
+	finalizer := newTestTransferFinalizer(t, &fakeTransferFinalizerPaymentService{
+		t: t,
+		findPaymentByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			require.Equal(t, paymentID, id)
+			return &domain.Payment{
+				ID:     id,
+				Status: domain.PaymentStatusProcessing,
+			}, nil
+		},
+		completeProcessedPaymentFn: func(ctx context.Context, gotPaymentID uuid.UUID) (*domain.Payment, error) {
+			completeCalls++
+			require.Equal(t, paymentID, gotPaymentID)
+			return nil, repository.ErrAccountNotFound
+		},
+		failProcessedPaymentFn: func(ctx context.Context, gotPaymentID uuid.UUID, errorCode string) (*domain.Payment, error) {
+			failCalls++
+			require.Equal(t, paymentID, gotPaymentID)
+			require.Equal(t, string(domain.ErrorCodeReceiverAccountNotFound), errorCode)
+			return &domain.Payment{
+				ID:     gotPaymentID,
+				Status: domain.PaymentStatusFailed,
+			}, nil
+		},
+	})
+
+	err := finalizer.HandleEvent(context.Background(), queue.PaymentEventMessage{
+		PaymentID: paymentID,
+		Attempt:   1,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, completeCalls)
+	require.Equal(t, 1, failCalls)
+}
+
+func TestTransferFinalizerHandleEventReturnsRefundErrorForRetry(t *testing.T) {
+	paymentID := uuid.MustParse(transferFinalizerPaymentID)
+	refundErr := errors.New("refund transaction unavailable")
+	failCalls := 0
+	finalizer := newTestTransferFinalizer(t, &fakeTransferFinalizerPaymentService{
+		t: t,
+		findPaymentByIDFn: func(ctx context.Context, id uuid.UUID) (*domain.Payment, error) {
+			return &domain.Payment{
+				ID:     id,
+				Status: domain.PaymentStatusProcessing,
+			}, nil
+		},
+		completeProcessedPaymentFn: func(ctx context.Context, paymentID uuid.UUID) (*domain.Payment, error) {
+			return nil, repository.ErrAccountNotFound
+		},
+		failProcessedPaymentFn: func(ctx context.Context, gotPaymentID uuid.UUID, errorCode string) (*domain.Payment, error) {
+			failCalls++
+			require.Equal(t, paymentID, gotPaymentID)
+			require.Equal(t, string(domain.ErrorCodeReceiverAccountNotFound), errorCode)
+			return nil, refundErr
+		},
+	})
+
+	err := finalizer.HandleEvent(context.Background(), queue.PaymentEventMessage{
+		PaymentID: paymentID,
+		Attempt:   1,
+	})
+
+	require.ErrorIs(t, err, refundErr)
+	require.Equal(t, 1, failCalls)
 }
