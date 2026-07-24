@@ -194,9 +194,9 @@ Gate: clients can poll a created payment until it reaches a terminal state.
 ## Add Read-Only Reconciliation
 
 - [ ] Add a reconciliation repository with query-only methods.
-- [ ] Detect completed payments missing sender debit or receiver credit entries.
-- [ ] Detect processed failures missing their debit or refund entries without flagging legitimate insufficient-funds failures.
-- [ ] Detect pending or rejected payments with any ledger movement.
+- [x] Detect completed payments missing sender debit or receiver credit entries.
+- [x] Detect processed failures missing their debit or refund entries without flagging legitimate insufficient-funds failures.
+- [x] Detect pending or rejected payments with any ledger movement.
 - [ ] Detect pending or processing payments older than a configurable threshold.
 - [ ] Detect unpublished outbox events older than a configurable threshold.
 - [ ] Return useful payment/event identifiers and discrepancy kinds.
@@ -208,7 +208,7 @@ Tests:
 - [ ] Seed one example of every required mismatch and verify it is reported.
 - [ ] Seed a consistent lifecycle and verify it is not reported.
 - [ ] Verify threshold boundaries for stale payments and outbox events.
-- [ ] Verify insufficient-funds failures without ledger entries are not false positives.
+- [x] Verify insufficient-funds failures without ledger entries are not false positives.
 
 Gate: reconciliation reports deliberately seeded discrepancies and changes no data.
 
