@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hisyamsk/vaultpay/internal/domain"
@@ -120,6 +121,24 @@ func insertUnexpectedReconciliationLedgerEntry(
 	require.NoError(t, err)
 }
 
+func setReconciliationPaymentUpdatedAt(
+	t *testing.T,
+	ctx context.Context,
+	repo *PaymentRepository,
+	paymentID uuid.UUID,
+	updatedAt time.Time,
+) {
+	t.Helper()
+
+	tag, err := repo.db.Exec(ctx, `
+		UPDATE payments
+		SET updated_at = $1
+		WHERE id = $2
+	`, updatedAt, paymentID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), tag.RowsAffected())
+}
+
 func TestReconciliationRepositoryFindLedgerDiscrepanciesReportsOnlyBrokenRulesInStableOrder(t *testing.T) {
 	repo, reconciliationRepo, ctx := newReconciliationTestRepositories(t)
 
@@ -208,4 +227,73 @@ func TestReconciliationRepositoryFindLedgerDiscrepanciesHonorsCanceledContext(t 
 
 	require.Nil(t, discrepancies)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestReconciliationRepositoryFindStalePaymentsReportsOnlyPendingAndProcessingStrictlyBeforeCutoffInStableOrder(t *testing.T) {
+	repo, reconciliationRepo, ctx := newReconciliationTestRepositories(t)
+	cutoff := time.Date(2026, time.July, 24, 10, 0, 0, 0, time.UTC)
+
+	seedPayment := func(
+		idempotencyKey string,
+		status domain.PaymentStatus,
+		updatedAt time.Time,
+	) reconciliationPaymentFixture {
+		t.Helper()
+
+		fixture := seedReconciliationPayment(t, ctx, repo, idempotencyKey, 2_000, 500)
+		switch status {
+		case domain.PaymentStatusPending:
+		case domain.PaymentStatusProcessing:
+			processed, err := repo.StartApprovedPaymentProcessing(ctx, fixture.payment.ID)
+			require.NoError(t, err)
+			fixture.payment = processed
+		case domain.PaymentStatusCompleted:
+			processed, err := repo.StartApprovedPaymentProcessing(ctx, fixture.payment.ID)
+			require.NoError(t, err)
+			fixture.payment, err = repo.CompleteProcessedPayment(ctx, processed.ID)
+			require.NoError(t, err)
+		case domain.PaymentStatusRejected:
+			rejected, err := repo.RejectPendingPayment(ctx, fixture.payment.ID)
+			require.NoError(t, err)
+			fixture.payment = rejected
+		default:
+			t.Fatalf("unsupported reconciliation payment status %q", status)
+		}
+		setReconciliationPaymentUpdatedAt(t, ctx, repo, fixture.payment.ID, updatedAt)
+		return fixture
+	}
+
+	stalePending := seedPayment(
+		"reconcile-stale-pending",
+		domain.PaymentStatusPending,
+		cutoff.Add(-time.Second),
+	)
+	staleProcessing := seedPayment(
+		"reconcile-stale-processing",
+		domain.PaymentStatusProcessing,
+		cutoff.Add(-time.Second),
+	)
+
+	// The cutoff is strict: payments at or after it are not stale.
+	seedPayment("reconcile-pending-at-cutoff", domain.PaymentStatusPending, cutoff)
+	seedPayment("reconcile-processing-at-cutoff", domain.PaymentStatusProcessing, cutoff)
+	seedPayment("reconcile-pending-after-cutoff", domain.PaymentStatusPending, cutoff.Add(time.Second))
+	seedPayment("reconcile-processing-after-cutoff", domain.PaymentStatusProcessing, cutoff.Add(time.Second))
+
+	// Terminal payments are not stale work, even when they are older than the cutoff.
+	seedPayment("reconcile-old-completed", domain.PaymentStatusCompleted, cutoff.Add(-time.Hour))
+	seedPayment("reconcile-old-rejected", domain.PaymentStatusRejected, cutoff.Add(-time.Hour))
+
+	expected := []domain.ReconciliationDiscrepancy{
+		{Kind: domain.ReconciliationStalePendingPayment, PaymentID: stalePending.payment.ID},
+		{Kind: domain.ReconciliationStaleProcessingPayment, PaymentID: staleProcessing.payment.ID},
+	}
+	sort.Slice(expected, func(i, j int) bool {
+		return expected[i].PaymentID.String() < expected[j].PaymentID.String()
+	})
+
+	discrepancies, err := reconciliationRepo.FindStalePayments(ctx, cutoff)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, discrepancies)
 }
